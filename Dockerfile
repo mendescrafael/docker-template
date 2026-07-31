@@ -1,7 +1,9 @@
 # -----------------------------------------------------------------------------
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# Copyright (c) 2026 Rafael Mendes
+# @copyright Copyright (c) 2026 Rafael Mendes
+# @license   GPLv3+ <https://www.gnu.org/licenses/gpl-3.0.html>
+# @link      GitHub <https://github.com/mendescrafael>
 #
 # This file is part of {Nome do projeto}.
 #
@@ -28,18 +30,18 @@
 #
 # Estrutura dos estágios:
 #
-#   - base: Configuração e instalação de pacotes comuns, definição do processo
+#   - BASE: Configuração e instalação de pacotes comuns, definição do processo
 #           de inicialização (`ENTRYPOINT`) e demais componentes compartilhados
 #           por todos os ambientes.
 #
-#   - app: Código-fonte da aplicação, arquivos auxiliares, configurações da
+#   - APP: Código-fonte da aplicação, arquivos auxiliares, configurações da
 #          aplicação.
 #
-#   - dev: Especialização da imagem para desenvolvimento, adicionando ferramentas
+#   - DEV: Especialização da imagem para desenvolvimento, adicionando ferramentas
 #          de diagnóstico, depuração e configurações apropriadas para esse
 #          ambiente.
 #
-#   - prd: Especialização da imagem para produção, aplicando configurações focadas
+#   - PRD: Especialização da imagem para produção, aplicando configurações focadas
 #          em desempenho, segurança e estabilidade.
 #
 # O ambiente final é definido pelo parâmetro de build `target`, permitindo gerar
@@ -67,7 +69,7 @@ FROM ${APP_BASE_IMG} AS base
 # e `docker-compose.dev.yml`. Veja também os arquivos `.env` e `.env.dev`.
 ARG APP_DIR
 ARG BUILD_DATE
-ARG ENV_TYPE
+ARG APP_ENV
 ARG LICENSE
 ARG PROJECT_NAME
 ARG PROJECT_DESCRIPTION
@@ -156,7 +158,7 @@ FROM base AS app
 # -----------------------------------------------------------------------------
 
 # -----------------------------------------------------------------------------
-# [BEGIN] Multi-stage: DESENVOLVIMENTO
+# [BEGIN] Multi-stage: DEV
 #
 # Estágio destinado ao ambiente de desenvolvimento. Estende o estágio 'app'
 # adicionando ferramentas de diagnóstico, edição e depuração, além de configurações
@@ -181,11 +183,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Portas de serviço para a aplicação.
 EXPOSE ${WEBSERVER_PORT} ${WEBSERVER_PORT_SSL}
 # -----------------------------------------------------------------------------
-# [END] Multi-stage: DESENVOLVIMENTO
+# [END] Multi-stage: DEV
 # -----------------------------------------------------------------------------
 
 # -----------------------------------------------------------------------------
-# [BEGIN] Multi-stage: PRODUÇÃO
+# [BEGIN] Multi-stage: PRD
 #
 # Estágio destinado ao ambiente de produção. Estende o estágio 'app' aplicando
 # configurações voltadas para desempenho, segurança e estabilidade, resultando
@@ -203,5 +205,5 @@ RUN apt-get clean \
 # Portas de serviço para a aplicação.
 EXPOSE ${WEBSERVER_PORT_SSL}
 # -----------------------------------------------------------------------------
-# [END] Multi-stage: PRODUÇÃO
+# [END] Multi-stage: PRD
 # -----------------------------------------------------------------------------
