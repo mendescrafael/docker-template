@@ -175,7 +175,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     vim \
     iproute2 \
     iputils-ping \
-    dnsutils
+    dnsutils \
+    git
 
 # TODO: Adicione aqui as instruções para o build da imagem da aplicação voltada
 # ao ambiente de desenvolvimento.
