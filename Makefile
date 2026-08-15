@@ -79,6 +79,12 @@ $(shell \
 	fi)
 endef
 
+# Executa um comando da aplicação no container com o usuário configurado para o
+# web server. Use esta função nos alvos específicos adicionados ao template.
+define run_app_command
+$(1) exec -it $(SERVICE_APP) su -s $(SHELL) -c "$(2)" $(WEBSERVER_USER)
+endef
+
 # Valores das variáveis de ambiente extraídos e atribuídos às suas respectivas variáveis.
 APP_BASE_IMG := $(call getenv,APP_BASE_IMG)
 APP_NAME := $(call getenv,APP_NAME)
@@ -90,6 +96,7 @@ LICENSE := $(call getenv,LICENSE)
 PROJECT_NAME := $(call getenv,PROJECT_NAME)
 PROJECT_DESCRIPTION := $(call getenv,PROJECT_DESCRIPTION)
 PROJECT_AUTHORS := $(call getenv,PROJECT_AUTHORS)
+WEBSERVER_USER := $(call getenv,WEBSERVER_USER)
 WEBSERVER_GROUP := $(call getenv,WEBSERVER_GROUP)
 
 # Captura o Git hash ID do último commit (veja `git log`).

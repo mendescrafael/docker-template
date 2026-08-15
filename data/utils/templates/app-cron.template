@@ -22,4 +22,4 @@
 # -----------------------------------------------------------------------------
 
 # Cron da aplicação.
-*/1 * * * *     www-data    date &>/dev/null
+*/1 * * * *     ${WEBSERVER_USER}    date &>/dev/null
