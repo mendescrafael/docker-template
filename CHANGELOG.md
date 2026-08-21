@@ -18,6 +18,30 @@ O formato baseia-se em [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ### Segurança
 
+## [1.1.0] - 2026-08-21
+
+### Adicionado
+
+- Adicionada função reutilizável no Makefile para executar comandos específicos da aplicação com o usuário configurado para o web server;
+
+### Alterado
+
+- Adotado padrão de funções POSIX no script `ENTRYPOINT`;
+- Transferida para o build da imagem a normalização da propriedade e das permissões do código incorporado;
+- Restrita a inicialização de permissões em runtime aos diretórios graváveis de configuração e arquivos persistentes;
+- Parametrizado o usuário das tarefas do Cron por meio de `WEBSERVER_USER`;
+- Atualizados os guias de contribuição, instalação, visão geral e uso conforme o estado atual do Docker Compose, Dockerfile, Makefile, templates e `ENTRYPOINT`;
+
+### Corrigido
+
+- Corrigido o uso fixo de `www-data` no `ENTRYPOINT` e no template do Cron, utilizando `WEBSERVER_USER` e `WEBSERVER_GROUP` definidos pelo projeto;
+- Evitado o ajuste recursivo de permissões em todo o diretório da aplicação durante cada inicialização;
+
+### Segurança
+
+- Removido o acesso de outros usuários do sistema ao código incorporado e aos diretórios graváveis da aplicação;
+- Aplicados modos `2770` aos diretórios graváveis e `660` aos seus arquivos, com `setgid` para preservar o grupo do web server;
+
 ## [1.0.0] - 2026-08-13
 
 ### Adicionado
