@@ -5,7 +5,7 @@
 # @license   GPLv3+ <https://www.gnu.org/licenses/gpl-3.0.html>
 # @link      GitHub <https://github.com/mendescrafael>
 #
-# This file is part of {Nome do projeto}.
+# This file is part of Docker Template.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -23,16 +23,11 @@
 
 # -----------------------------------------------------------------------------
 # Docker Compose override para ambiente de desenvolvimento.
-#
-# Use este arquivo com os comandos `make build-dev` e `make up-dev`. Para ajuda,
-# execute: `make help` (na raiz do projeto).
-#
-# Para mais informações, consulte o arquivo `README.md`.
 # -----------------------------------------------------------------------------
 
 volumes:
   db_vol:
-    name: ${APP_NAME}-${CLIENT_ID}-${DB_SERVICE}-${APP_ENV}
+    name: ${PROJECT_NAME}-${CLIENT_ID}-${DB_SERVICE}-${APP_BUILD_ENV}
 
 services:
   app:
@@ -40,18 +35,27 @@ services:
       - .env
       - .env.dev
     build:
-      target: ${APP_ENV}
+      target: ${APP_BUILD_ENV}
     restart: no
+    depends_on:
+      db:
+        condition: service_healthy
     volumes:
       - ./app:${APP_DIR}:rw
+
+  web:
+    restart: no
+    volumes:
+      - ./app/public:${WEBSERVER_SITE_ROOT_DIR}:ro
+      - ./data/utils/ssl:${SSL_DIR}:ro
 
   db:
     env_file:
       - .env
       - .env.dev
     image: ${DB_BASE_IMG}
-    container_name: ${APP_NAME}-${CLIENT_ID}-db-${DB_SERVICE}-${APP_ENV}
-    hostname: db-${DB_SERVICE}-${APP_ENV}
+    container_name: ${PROJECT_NAME}-${CLIENT_ID}-db-${DB_SERVICE}-${APP_BUILD_ENV}
+    hostname: db-${DB_SERVICE}-${APP_BUILD_ENV}
     restart: no
     networks:
       - app_net
@@ -62,16 +66,16 @@ services:
       - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
       - TZ=${TZ}
     ports:
-      - "${MYSQL_PORT}:${MYSQL_PORT}"
+      - "${DB_PUBLISHED_PORT}:${DB_PORT}"
     volumes:
       - db_vol:${DB_DIR}:rw
       - ./data/db/dumps:${DB_DUMPS_DIR}:rw
-    command:
+    command: --port=${DB_PORT}
       --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
       --innodb_file_per_table=1
       --sql_mode=STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-P", "${DB_PORT}"]
       interval: 30s
       timeout: 10s
       retries: 3

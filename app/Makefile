@@ -5,7 +5,7 @@
 # @license   GPLv3+ <https://www.gnu.org/licenses/gpl-3.0.html>
 # @link      GitHub <https://github.com/mendescrafael>
 #
-# This file is part of {Nome do projeto}.
+# This file is part of Docker Template.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -21,5 +21,25 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 # -----------------------------------------------------------------------------
 
-# Cron da aplicação.
-*/1 * * * *     ${WEBSERVER_USER}    date &>/dev/null
+# -----------------------------------------------------------------------------
+# Configuração.
+# -----------------------------------------------------------------------------
+.DEFAULT_GOAL := help
+
+# Shell utilizado pelo Make.
+SHELL := /bin/bash
+
+# -----------------------------------------------------------------------------
+# Declaração dos alvos.
+# -----------------------------------------------------------------------------
+.PHONY: \
+	help
+
+# -----------------------------------------------------------------------------
+# Ajuda.
+# -----------------------------------------------------------------------------
+help:
+	@printf "Uso: make [COMANDO] [VARIAVEL=valor]\n\n"
+
+	@printf "Comandos comuns:\n"
+	@printf "  %-22s %s\n\n" "help" "Este menu de ajuda."

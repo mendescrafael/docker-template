@@ -44,31 +44,50 @@ Antes de começar, leia o [README.md](README.md) para conhecer o projeto, o [INS
 
 ## Uso do Makefile
 
-<!-- Descrição do uso do Makefile -->
+O `Makefile` fornece uma interface opcional para projetos PHP, Node.js ou híbridos. Ele detecta `composer.json` e `package.json`, exige somente as ferramentas correspondentes aos manifests presentes e delega operações específicas aos scripts declarados pelo projeto.
+
+Consulte os alvos e as variáveis disponíveis:
+
+```bash
+make help
+```
 
 ### Variáveis configuráveis
 
-<!-- Descrição da finalidade das variáveis -->
+- `COMPOSER`, `PHP`, `NODE` e `NPM`: Executáveis utilizados pelas toolchains;
+- `COMPOSER_PROJECT_DIR` e `NODE_PROJECT_DIR`: Diretórios que contêm os manifests das toolchains;
+- `COMPOSER_INSTALL_FLAGS`, `COMPOSER_UPDATE_FLAGS`, `NPM_INSTALL_FLAGS` e `NPM_UPDATE_FLAGS`: Opções adicionais encaminhadas aos gerenciadores;
+- `PHP_SOURCE_PATHS`: Caminhos pesquisados por `lint-php`;
+- `LINT_SCRIPT`, `ANALYSE_SCRIPT`, `TEST_SCRIPT`, `FORMAT_SCRIPT` e `BUILD_SCRIPT`: Nomes dos scripts delegados aos manifests;
 
 ### Verificações de pré-requisitos
 
-<!-- Instruções sobre comandos de checagem de pré-requisitos -->
+Use `make check` para verificar somente os executáveis exigidos pelos manifests existentes. Use `make validate` para validar os manifests sem instalar dependências.
 
 ### Permissionamento do ambiente de desenvolvimento
 
-<!-- Instruções sobre comandos de permissionamento -->
+O `Makefile` não altera proprietário, grupo ou permissões do workspace. O permissionamento deve ser definido pela infraestrutura ou pelo ambiente de desenvolvimento responsável pela aplicação.
 
 ### Validações de qualidade
 
-<!-- Instruções sobre comandos de qualidade do projeto e/ou código -->
+- `make lint-php`: Valida a sintaxe dos arquivos PHP encontrados;
+- `make lint`: Valida manifests, sintaxe PHP e scripts de lint declarados;
+- `make analyse`: Executa os scripts de análise estática declarados;
+- `make test`: Executa os scripts de teste declarados;
+- `make qa`: Executa lint, análise e testes;
 
 ### Operações específicas do projeto
 
-<!-- Listagem de operações específicas do projeto -->
+- `make install`: Instala somente as dependências dos manifests presentes;
+- `make update`: Atualiza somente as dependências dos manifests presentes;
+- `make list-scripts`: Lista os scripts disponibilizados por Composer e npm;
+- `make run SCRIPT=<nome>`: Executa um script específico nos manifests que o declararem;
+- `make format`: Executa os scripts de formatação declarados;
+- `make build`: Executa os scripts de build declarados;
 
 ### Convenções para novos alvos
 
-<!-- Instruções sobre nomenclatura para novos alvos no Makefile -->
+Prefira scripts nos manifests para operações próprias de frameworks ou ferramentas. Adicione um alvo ao `Makefile` somente quando ele coordenar um fluxo reutilizável entre projetos, mantenha executáveis e caminhos configuráveis e não torne uma toolchain obrigatória quando seu manifest estiver ausente.
 
 ## Padrões de código e documentação
 

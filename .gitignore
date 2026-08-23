@@ -5,7 +5,7 @@
 # @license   GPLv3+ <https://www.gnu.org/licenses/gpl-3.0.html>
 # @link      GitHub <https://github.com/mendescrafael>
 #
-# This file is part of {Nome do projeto}.
+# This file is part of Docker Template.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -50,12 +50,6 @@ Thumbs.db
 !.env.dev.example
 
 # -----------------------------------------------------------------------------
-# Diretório de configuração.
-# -----------------------------------------------------------------------------
-data/app/config/*
-!data/app/config/.gitkeep
-
-# -----------------------------------------------------------------------------
 # Diretório de dumps (backups) do banco de dados.
 # -----------------------------------------------------------------------------
 data/db/dumps/*
@@ -75,20 +69,14 @@ data/utils/ssl/*
 !data/utils/ssl/*.example
 
 # -----------------------------------------------------------------------------
-# Diretório de persistência de dados.
+# Artefatos de desenvolvimento da aplicação.
 # -----------------------------------------------------------------------------
-app/files/*
-!app/files/.gitkeep
-!app/files/.htaccess
-
-!app/files/_*/
-app/files/_*/*
-!app/files/_*/.gitkeep
-
-data/app/files/*
-!data/app/files/.gitkeep
-!data/app/files/.htaccess
-
-!data/app/files/_*/
-data/app/files/_*/*
-!data/app/files/_*/.gitkeep
+app/.php-cs-fixer.cache
+app/.phpunit.result.cache
+app/.gh_token
+app/*.min.*
+app/coverage/
+app/dist/
+app/node_modules/
+app/vendor/
+app/var/

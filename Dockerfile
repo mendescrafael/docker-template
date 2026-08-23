@@ -5,7 +5,7 @@
 # @license   GPLv3+ <https://www.gnu.org/licenses/gpl-3.0.html>
 # @link      GitHub <https://github.com/mendescrafael>
 #
-# This file is part of {Nome do projeto}.
+# This file is part of Docker Template.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -22,77 +22,50 @@
 # -----------------------------------------------------------------------------
 
 # -----------------------------------------------------------------------------
-# Este Dockerfile utiliza a estratégia de Multi-stage builds para organizar a
-# construção da imagem em estágios independentes e reutilizáveis.
+# Este Dockerfile utiliza Multi-stage builds com duas famílias de imagens:
 #
-# A divisão em estágios reduz duplicação de instruções, melhora a manutenção do
-# arquivo e permite compartilhar uma base comum entre diferentes ambientes.
+#   Aplicação PHP-FPM:
+#     - BASE: Dependências e configuração comuns;
+#     - APP:  Especialização da aplicação;
+#     - DEV:  Runtime de desenvolvimento;
+#     - PRD:  Runtime de produção;
 #
-# Estrutura dos estágios:
+#   Web server Nginx:
+#     - WEB-BASE: Configuração comum do Nginx;
+#     - WEB-DEV:  Arquivos públicos gerados pelo target DEV;
+#     - WEB-PRD:  Arquivos públicos gerados pelo target PRD;
 #
-#   - BASE: Configuração e instalação de pacotes comuns, definição do processo
-#           de inicialização (`ENTRYPOINT`) e demais componentes compartilhados
-#           por todos os ambientes.
-#
-#   - APP: Código-fonte da aplicação, arquivos auxiliares, configurações da
-#          aplicação.
-#
-#   - DEV: Especialização da imagem para desenvolvimento, adicionando ferramentas
-#          de diagnóstico, depuração e configurações apropriadas para esse
-#          ambiente.
-#
-#   - PRD: Especialização da imagem para produção, aplicando configurações focadas
-#          em desempenho, segurança e estabilidade.
-#
-# O ambiente final é definido pelo parâmetro de build `target`, permitindo gerar
-# imagens específicas para desenvolvimento ou produção a partir de um único
-# Dockerfile. Consulte o parâmetro `target` nos arquivos `docker-compose.yml` e
-# `docker-compose.dev.yml`.
+# O Compose constrói `app` usando `${APP_BUILD_ENV}` e `web` usando
+# `web-${APP_BUILD_ENV}`, preservando um único Dockerfile e a reutilização entre
+# ambientes.
 # -----------------------------------------------------------------------------
+
+# Imagens base. Os valores podem ser sobrescritos por argumentos de build.
+ARG APP_BASE_IMG=php:8.5.9-fpm-trixie
+ARG WEBSERVER_BASE_IMG=nginx:1.30.4-alpine3.24
 
 # -----------------------------------------------------------------------------
 # [BEGIN] Multi-stage: BASE
-#
-# Estágio responsável por preparar a imagem base da aplicação, contendo componentes
-# comuns a todos os ambientes. Configuração do processo de inicialização (`ENTRYPOINT`),
-# arquivos de inicialização, metadados da imagem e demais dependências
-# compartilhadas entre os demais estágios.
 # -----------------------------------------------------------------------------
-
-# Imagem base para aplicação.
-ARG APP_BASE_IMG=php:8.5-apache
 FROM ${APP_BASE_IMG} AS base
 
-# Variáveis de build, usadas durante a construção da imagem.
-#
-# Para mais informações, consulte os arquivos `docker-compose.yml`
-# e `docker-compose.dev.yml`. Veja também os arquivos `.env` e `.env.dev`.
 ARG APP_DIR
+ARG APP_RUNTIME_GROUP
+ARG APP_RUNTIME_USER
 ARG BUILD_DATE
-ARG APP_ENV
 ARG LICENSE
-ARG PROJECT_NAME
-ARG PROJECT_DESCRIPTION
+ARG PHP_FPM_PORT
 ARG PROJECT_AUTHORS
+ARG PROJECT_DESCRIPTION
+ARG PROJECT_LABEL
 ARG REVISION
-ARG SSL_DIR
 ARG TAG_IMAGE
-ARG TEMPLATES_DIR
 ARG TZ
 ARG VENDOR_LABEL
-ARG WEBSERVER_PORT
-ARG WEBSERVER_PORT_SSL
-ARG WEBSERVER_USER
-ARG WEBSERVER_GROUP
 
-# Variáveis de ambiente, usadas durante a inicialização e execução dos containers.
-#
-# Demais variáveis de ambiente usadas são passadas via propriedade `environment`.
-# Para mais informações, consulte os arquivos `docker-compose.yml` e `docker-compose.dev.yml`.
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Metadados da imagem.
-LABEL org.opencontainers.image.title="${PROJECT_NAME}"
+LABEL org.opencontainers.image.title="${PROJECT_LABEL}"
 LABEL org.opencontainers.image.description="${PROJECT_DESCRIPTION}"
 LABEL org.opencontainers.image.authors="${PROJECT_AUTHORS}"
 LABEL org.opencontainers.image.licenses="${LICENSE}"
@@ -101,82 +74,55 @@ LABEL org.opencontainers.image.version="${TAG_IMAGE}"
 LABEL org.opencontainers.image.created="${BUILD_DATE}"
 LABEL org.opencontainers.image.revision="${REVISION}"
 
-# Diretório padrão de trabalho.
 WORKDIR ${APP_DIR}
 
 # Conteúdo da aplicação.
-#
-# O código incorporado à imagem pertence ao usuário e ao grupo do web server,
-# sem conceder acesso aos demais usuários do sistema. Os diretórios que exigem
-# escrita recebem permissões específicas durante a inicialização. Para mais
-# informações, consulte o arquivo `data/utils/app-entrypoint`.
-COPY --chown=${WEBSERVER_USER}:${WEBSERVER_GROUP} app/ .
-RUN chown "${WEBSERVER_USER}:${WEBSERVER_GROUP}" "${APP_DIR}" \
+COPY --chown=${APP_RUNTIME_USER}:${APP_RUNTIME_GROUP} app/ .
+RUN chown "${APP_RUNTIME_USER}:${APP_RUNTIME_GROUP}" "${APP_DIR}" \
     && find "${APP_DIR}" -type d -exec chmod 750 {} + \
     && find "${APP_DIR}" -type f -exec chmod 640 {} +
 
-# Diretório de certificados SSL.
-COPY data/utils/ssl/ ${SSL_DIR}/
-
-# Diretório de templates.
-COPY data/utils/templates/ ${TEMPLATES_DIR}/
-
-# Web server.
-RUN a2enmod rewrite ssl headers
-
-# ENTRYPOINT.
+# ENTRYPOINT da aplicação.
 COPY data/utils/app-entrypoint /usr/local/bin/
 RUN chmod +x /usr/local/bin/app-entrypoint
 
-# Updates e instalação de pacotes comuns.
+# Pacotes comuns aos ambientes.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     locales \
     logrotate \
-    cron \
-    gettext-base
+    && rm -rf /var/lib/apt/lists/*
 
-# Definindo a timezone.
+# Timezone.
 RUN ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime \
     && echo "${TZ}" > /etc/timezone
 
-# Definindo o rotacionamento de logs.
+# Rotacionamento de logs.
 RUN test -f /etc/logrotate.conf \
     && sed -i 's/weekly/daily/g' /etc/logrotate.conf \
     || echo "'/etc/logrotate.conf' não encontrado, ignorando..."
 
-# Inicializa configurações gerais para aplicação.
 ENTRYPOINT ["app-entrypoint"]
+CMD ["php-fpm"]
 # -----------------------------------------------------------------------------
 # [END] Multi-stage: BASE
 # -----------------------------------------------------------------------------
 
 # -----------------------------------------------------------------------------
 # [BEGIN] Multi-stage: APP
-#
-# Estágio responsável por montar a aplicação. Inclui o código-fonte, arquivos
-# auxiliares, configurações e instalação de pacotes específicos da aplicação.
-# Este estágio serve como base para as imagens finais produção e desenvolvimento.
 # -----------------------------------------------------------------------------
 FROM base AS app
 
-# TODO: Adicione aqui as instruções para o build da imagem da aplicação comuns
-# aos dois ambientes (produção e desenvolvimento). Então, especialize as instruções
-# apropriadas nos estágios abaixo.
-
+# TODO: Adicione aqui as instruções comuns do build da aplicação para os
+# ambientes de produção e desenvolvimento.
 # -----------------------------------------------------------------------------
 # [END] Multi-stage: APP
 # -----------------------------------------------------------------------------
 
 # -----------------------------------------------------------------------------
 # [BEGIN] Multi-stage: DEV
-#
-# Estágio destinado ao ambiente de desenvolvimento. Estende o estágio 'app'
-# adicionando ferramentas de diagnóstico, edição e depuração, além de configurações
-# voltadas para facilitar o desenvolvimento, depuração e testes locais da aplicação.
 # -----------------------------------------------------------------------------
 FROM app AS dev
 
-# Updates e instalação de pacotes restritos ao ambiente de desenvolvimento.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash-completion \
     libarchive-tools \
@@ -186,35 +132,99 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     iproute2 \
     iputils-ping \
     dnsutils \
-    git
+    git \
+    && rm -rf /var/lib/apt/lists/*
 
-# TODO: Adicione aqui as instruções para o build da imagem da aplicação voltada
-# ao ambiente de desenvolvimento.
+# TODO: Adicione aqui as instruções específicas de desenvolvimento.
 
-# Portas de serviço para a aplicação.
-EXPOSE ${WEBSERVER_PORT} ${WEBSERVER_PORT_SSL}
+EXPOSE ${PHP_FPM_PORT}
 # -----------------------------------------------------------------------------
 # [END] Multi-stage: DEV
 # -----------------------------------------------------------------------------
 
 # -----------------------------------------------------------------------------
 # [BEGIN] Multi-stage: PRD
-#
-# Estágio destinado ao ambiente de produção. Estende o estágio 'app' aplicando
-# configurações voltadas para desempenho, segurança e estabilidade, resultando
-# na imagem final otimizada para execução da aplicação em ambientes produtivos.
 # -----------------------------------------------------------------------------
 FROM app AS prd
 
-# TODO: Adicione aqui as instruções para o build da imagem da aplicação voltada
-# ao ambiente de produção.
+# TODO: Adicione aqui as instruções específicas de produção.
 
-# Limpeza de cache do apt-get.
 RUN apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Portas de serviço para a aplicação.
-EXPOSE ${WEBSERVER_PORT_SSL}
+EXPOSE ${PHP_FPM_PORT}
 # -----------------------------------------------------------------------------
 # [END] Multi-stage: PRD
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# [BEGIN] Multi-stage: WEB-BASE
+#
+# O Nginx é executado em um container separado e encaminha requisições PHP ao
+# serviço `app` por FastCGI. A imagem oficial processa automaticamente os
+# templates presentes em `/etc/nginx/templates/` durante a inicialização.
+# -----------------------------------------------------------------------------
+FROM ${WEBSERVER_BASE_IMG} AS web-base
+
+ARG BUILD_DATE
+ARG LICENSE
+ARG PROJECT_AUTHORS
+ARG PROJECT_DESCRIPTION
+ARG PROJECT_LABEL
+ARG REVISION
+ARG TAG_IMAGE
+ARG VENDOR_LABEL
+
+LABEL org.opencontainers.image.title="${PROJECT_LABEL} Web"
+LABEL org.opencontainers.image.description="${PROJECT_DESCRIPTION} - Nginx web server"
+LABEL org.opencontainers.image.authors="${PROJECT_AUTHORS}"
+LABEL org.opencontainers.image.licenses="${LICENSE}"
+LABEL org.opencontainers.image.vendor="${VENDOR_LABEL}"
+LABEL org.opencontainers.image.version="${TAG_IMAGE}"
+LABEL org.opencontainers.image.created="${BUILD_DATE}"
+LABEL org.opencontainers.image.revision="${REVISION}"
+
+# Remove o site padrão e instala os templates do projeto. O ENTRYPOINT oficial
+# do Nginx executará envsubst e gerará os arquivos em `/etc/nginx/conf.d/`.
+RUN rm -f /etc/nginx/conf.d/default.conf
+COPY data/utils/templates/app-site-cfg.conf.template /etc/nginx/templates/
+COPY data/utils/templates/app-site-vhost.conf.template /etc/nginx/templates/
+# -----------------------------------------------------------------------------
+# [END] Multi-stage: WEB-BASE
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# [BEGIN] Multi-stage: WEB-DEV
+# -----------------------------------------------------------------------------
+FROM web-base AS web-dev
+
+ARG APP_DIR
+ARG WEBSERVER_SITE_ROOT_DIR
+ARG WEBSERVER_PORT
+ARG WEBSERVER_PORT_SSL
+
+RUN mkdir -p "${WEBSERVER_SITE_ROOT_DIR}"
+COPY --from=dev --chown=nginx:nginx ${APP_DIR}/public/ ${WEBSERVER_SITE_ROOT_DIR}/
+
+EXPOSE ${WEBSERVER_PORT} ${WEBSERVER_PORT_SSL}
+# -----------------------------------------------------------------------------
+# [END] Multi-stage: WEB-DEV
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# [BEGIN] Multi-stage: WEB-PRD
+# -----------------------------------------------------------------------------
+FROM web-base AS web-prd
+
+ARG APP_DIR
+ARG WEBSERVER_SITE_ROOT_DIR
+ARG WEBSERVER_PORT
+ARG WEBSERVER_PORT_SSL
+
+RUN mkdir -p "${WEBSERVER_SITE_ROOT_DIR}"
+COPY --from=prd --chown=nginx:nginx ${APP_DIR}/public/ ${WEBSERVER_SITE_ROOT_DIR}/
+
+EXPOSE ${WEBSERVER_PORT} ${WEBSERVER_PORT_SSL}
+# -----------------------------------------------------------------------------
+# [END] Multi-stage: WEB-PRD
 # -----------------------------------------------------------------------------

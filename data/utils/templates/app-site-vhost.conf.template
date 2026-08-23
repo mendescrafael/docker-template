@@ -5,7 +5,7 @@
 # @license   GPLv3+ <https://www.gnu.org/licenses/gpl-3.0.html>
 # @link      GitHub <https://github.com/mendescrafael>
 #
-# This file is part of {Nome do projeto}.
+# This file is part of Docker Template.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -21,45 +21,61 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 # -----------------------------------------------------------------------------
 
-<VirtualHost *:${WEBSERVER_PORT}>
-        ServerName ${WEBSERVER_DOMAIN_NAME}
-        ServerAdmin ${WEBSERVER_ADMIN_EMAIL}
+# HTTP: healthcheck local e redirecionamento do restante para HTTPS.
+server {
+    listen ${WEBSERVER_PORT};
+    server_name ${WEBSERVER_DOMAIN_NAME};
 
-        RewriteEngine On
-        RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
-</VirtualHost>
+    location = /health {
+        access_log off;
+        default_type text/plain;
+        return 200 "OK\n";
+    }
 
-<VirtualHost *:${WEBSERVER_PORT_SSL}>
-        ServerName ${WEBSERVER_DOMAIN_NAME}
-        ServerAdmin ${WEBSERVER_ADMIN_EMAIL}
-        DocumentRoot ${WEBSERVER_SITE_ROOT_DIR}
+    location / {
+        return 301 https://$host:${WEBSERVER_PORT_SSL}$request_uri;
+    }
+}
 
-        ErrorLog ${APACHE_LOG_DIR}/${WEBSERVER_DOMAIN_NAME}_error.log
-        CustomLog ${APACHE_LOG_DIR}/${WEBSERVER_DOMAIN_NAME}_access.log combined
+# HTTPS: arquivos públicos e encaminhamento PHP ao PHP-FPM.
+server {
+    listen ${WEBSERVER_PORT_SSL} ssl;
+    http2 on;
+    server_name ${WEBSERVER_DOMAIN_NAME};
 
-        SSLEngine On
-        SSLCertificateFile ${SSL_CERT_FILE}
-        SSLCertificateKeyFile ${SSL_KEY_FILE}
+    root ${WEBSERVER_SITE_ROOT_DIR};
+    index index.php index.html;
 
-        <Directory ${WEBSERVER_SITE_ROOT_DIR}>
-                # Helps prevent unwanted permissions or directory issues.
-                Options Indexes FollowSymLinks
+    access_log /var/log/nginx/access.log;
+    error_log /var/log/nginx/error.log warn;
 
-                # Allow use of .htaccess (override).
-                AllowOverride All
+    ssl_certificate ${SSL_CERT_FILE};
+    ssl_certificate_key ${SSL_KEY_FILE};
+    ssl_protocols TLSv1.2 TLSv1.3;
 
-                # Required for access on Apache 2.4+.
-                Require all granted
+    location = /health {
+        access_log off;
+        default_type text/plain;
+        return 200 "OK\n";
+    }
 
-                RewriteEngine On
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
 
-                # Ensure authorization headers are passed to PHP.
-                # Some Apache configurations may filter them and break usage of API, CalDAV, ...
-                RewriteCond %{HTTP:Authorization} ^(.+)$
-                RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+    location ~ \.php$ {
+        try_files $uri =404;
 
-                # Redirect all requests to application router, unless file exists.
-                RewriteCond %{REQUEST_FILENAME} !-f
-                RewriteRule ^(.*)$ index.php [QSA,L]
-        </Directory>
-</VirtualHost>
+        include fastcgi_params;
+        fastcgi_pass ${PHP_FPM_HOST}:${PHP_FPM_PORT};
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_param HTTP_AUTHORIZATION $http_authorization;
+        fastcgi_param HTTPS on;
+    }
+
+    # Impede acesso a arquivos ocultos, preservando o caminho ACME.
+    location ~ /\.(?!well-known).* {
+        deny all;
+    }
+}

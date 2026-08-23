@@ -5,7 +5,7 @@
 # @license   GPLv3+ <https://www.gnu.org/licenses/gpl-3.0.html>
 # @link      GitHub <https://github.com/mendescrafael>
 #
-# This file is part of {Nome do projeto}.
+# This file is part of Docker Template.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -21,12 +21,11 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 # -----------------------------------------------------------------------------
 
-# Define o nome da Stack no Docker.
-name: ${APP_NAME}-${CLIENT_ID}-${APP_ENV}
+name: ${PROJECT_NAME}-${CLIENT_ID}-${APP_BUILD_ENV}
 
 networks:
   app_net:
-    name: ${APP_NAME}-${CLIENT_ID}
+    name: ${PROJECT_NAME}-${CLIENT_ID}
     driver: bridge
 
 services:
@@ -35,71 +34,111 @@ services:
       - .env
     build:
       context: .
-      target: ${APP_ENV}
+      target: ${APP_BUILD_ENV}
       args:
         - APP_BASE_IMG=${APP_BASE_IMG}
         - APP_DIR=${APP_DIR}
+        - APP_RUNTIME_GROUP=${APP_RUNTIME_GROUP}
+        - APP_RUNTIME_USER=${APP_RUNTIME_USER}
         - BUILD_DATE=${BUILD_DATE}
-        - APP_ENV=${APP_ENV}
         - LICENSE=${LICENSE}
-        - PROJECT_NAME=${PROJECT_NAME}
-        - PROJECT_DESCRIPTION=${PROJECT_DESCRIPTION}
+        - PHP_FPM_PORT=${PHP_FPM_PORT}
         - PROJECT_AUTHORS=${PROJECT_AUTHORS}
+        - PROJECT_DESCRIPTION=${PROJECT_DESCRIPTION}
+        - PROJECT_LABEL=${PROJECT_LABEL}
         - REVISION=${REVISION}
-        - SSL_DIR=${SSL_DIR}
         - TAG_IMAGE=${TAG_IMAGE:-latest}
-        - TEMPLATES_DIR=${TEMPLATES_DIR}
         - TZ=${TZ}
         - VENDOR_LABEL=${VENDOR_LABEL:-Contoso}
-        - WEBSERVER_PORT=${WEBSERVER_PORT}
-        - WEBSERVER_PORT_SSL=${WEBSERVER_PORT_SSL}
-        - WEBSERVER_USER=${WEBSERVER_USER}
-        - WEBSERVER_GROUP=${WEBSERVER_GROUP}
-    image: ${VENDOR_ID}/${APP_NAME}-${CLIENT_ID}:${TAG_IMAGE:-latest}
-    container_name: ${APP_NAME}-${CLIENT_ID}-app-${APP_SERVICE}-${APP_ENV}
-    hostname: app-${APP_SERVICE}-${APP_ENV}
+    image: ${VENDOR_ID}/${PROJECT_NAME}-${CLIENT_ID}:${TAG_IMAGE:-latest}
+    container_name: ${PROJECT_NAME}-${CLIENT_ID}-app-${APP_SERVICE}-${APP_BUILD_ENV}
+    hostname: app-${APP_SERVICE}-${APP_BUILD_ENV}
     restart: always
     networks:
       - app_net
     environment:
       - APP_DIR=${APP_DIR}
-      - APP_CONFIG_DIR=${APP_CONFIG_DIR}
-      - APP_FILES_DIR=${APP_FILES_DIR}
       - APP_SERVICE=${APP_SERVICE}
-      - CRON_DIR=${CRON_DIR}
-      - CRON_TEMPLATE_FILE=${CRON_TEMPLATE_FILE}
-      - CRON_FILE=${CRON_FILE}
+      - APP_RUNTIME_USER=${APP_RUNTIME_USER}
+      - APP_RUNTIME_GROUP=${APP_RUNTIME_GROUP}
+      - APP_NAME=${APP_NAME}
+      - APP_ENV=${APP_ENV}
+      - APP_DEBUG=${APP_DEBUG}
+      - APP_URL=${APP_URL}
+      - APP_KEY=${APP_KEY}
       - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
       - DB_USER=${DB_USER}
       - DB_PASS=${DB_PASS}
       - DB_NAME=${DB_NAME}
-      - APP_ENV=${APP_ENV}
-      - SSL_DIR=${SSL_DIR}
+    expose:
+      - "${PHP_FPM_PORT}"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          php -r '$$socket=@fsockopen("127.0.0.1", ${PHP_FPM_PORT});
+          exit($$socket ? 0 : 1);'
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  web:
+    build:
+      context: .
+      target: web-${APP_BUILD_ENV}
+      args:
+        - APP_DIR=${APP_DIR}
+        - BUILD_DATE=${BUILD_DATE}
+        - LICENSE=${LICENSE}
+        - PROJECT_AUTHORS=${PROJECT_AUTHORS}
+        - PROJECT_DESCRIPTION=${PROJECT_DESCRIPTION}
+        - PROJECT_LABEL=${PROJECT_LABEL}
+        - REVISION=${REVISION}
+        - TAG_IMAGE=${TAG_IMAGE:-latest}
+        - VENDOR_LABEL=${VENDOR_LABEL:-Contoso}
+        - WEBSERVER_BASE_IMG=${WEBSERVER_BASE_IMG}
+        - WEBSERVER_SITE_ROOT_DIR=${WEBSERVER_SITE_ROOT_DIR}
+        - WEBSERVER_PORT=${WEBSERVER_PORT}
+        - WEBSERVER_PORT_SSL=${WEBSERVER_PORT_SSL}
+    image: ${VENDOR_ID}/${PROJECT_NAME}-${CLIENT_ID}-web:${TAG_IMAGE:-latest}
+    container_name: ${PROJECT_NAME}-${CLIENT_ID}-web-${WEBSERVER_SERVICE}-${APP_BUILD_ENV}
+    hostname: web-${WEBSERVER_SERVICE}-${APP_BUILD_ENV}
+    restart: always
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - app_net
+    environment:
+      - PHP_FPM_HOST=${PHP_FPM_HOST}
+      - PHP_FPM_PORT=${PHP_FPM_PORT}
       - SSL_CERT_FILE=${SSL_CERT_FILE}
       - SSL_KEY_FILE=${SSL_KEY_FILE}
-      - TEMPLATES_DIR=${TEMPLATES_DIR}
-      - WEBSERVER_DIR=${WEBSERVER_DIR}
-      - WEBSERVER_CFG_TEMPLATE=${WEBSERVER_CFG_TEMPLATE}
-      - WEBSERVER_CFG_FILE=${WEBSERVER_CFG_FILE}
-      - WEBSERVER_VHOST_TEMPLATE=${WEBSERVER_VHOST_TEMPLATE}
-      - WEBSERVER_VHOST_FILE=${WEBSERVER_VHOST_FILE}
-      - WEBSERVER_SITE_ROOT_DIR=${WEBSERVER_SITE_ROOT_DIR}
+      - WEBSERVER_CLIENT_MAX_BODY_SIZE=${WEBSERVER_CLIENT_MAX_BODY_SIZE}
       - WEBSERVER_DOMAIN_NAME=${WEBSERVER_DOMAIN_NAME}
-      - WEBSERVER_ADMIN_EMAIL=${WEBSERVER_ADMIN_EMAIL}
       - WEBSERVER_PORT=${WEBSERVER_PORT}
       - WEBSERVER_PORT_SSL=${WEBSERVER_PORT_SSL}
+      - WEBSERVER_SITE_ROOT_DIR=${WEBSERVER_SITE_ROOT_DIR}
     ports:
       - "${WEBSERVER_PORT}:${WEBSERVER_PORT}"
       - "${WEBSERVER_PORT_SSL}:${WEBSERVER_PORT_SSL}"
     volumes:
-      - ./data/app/config:${APP_CONFIG_DIR}:rw
-      - ./data/app/files:${APP_FILES_DIR}:rw
+      - ./data/utils/ssl:${SSL_DIR}:ro
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost"]
-      interval: 60s
-      timeout: 10s
+      test:
+        - CMD-SHELL
+        - wget -q -O /dev/null "http://127.0.0.1:${WEBSERVER_PORT}/health"
+      interval: 30s
+      timeout: 5s
       retries: 3
-      start_period: 90s
+      start_period: 15s
     logging:
       driver: "json-file"
       options:

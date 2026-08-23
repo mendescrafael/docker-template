@@ -1,8 +1,8 @@
 # Instalação
 
-Este documento descreve como adaptar, configurar e executar o Docker Template em ambientes de desenvolvimento e produção.
+Este documento descreve como criar um novo projeto a partir do Docker Template, adaptar sua infraestrutura e executar os ambientes de desenvolvimento e produção.
 
-O projeto fornece uma infraestrutura reutilizável baseada em Docker Multi-stage builds, Docker Compose, arquivos de ambiente, templates, `ENTRYPOINT` e Makefile. Antes da primeira execução, a estrutura deve ser personalizada para a aplicação que utilizará o template.
+O projeto fornece uma infraestrutura reutilizável baseada em Docker Multi-stage builds, Docker Compose, arquivos de ambiente, templates, `ENTRYPOINT` e Makefile. O template é um ponto de partida: depois da criação, o projeto derivado deve possuir histórico Git próprio e pode especializar a infraestrutura conforme sua aplicação.
 
 Depois de concluir a primeira implantação, consulte o [guia de uso](USAGE.md) para operar, inspecionar, manter e diagnosticar os ambientes.
 
@@ -48,7 +48,10 @@ O usuário atual deve possuir permissão para executar o Docker.
 Clone o repositório e acesse sua raiz:
 
 ```bash
-git clone https://github.com/mendescrafael/docker-template.git && cd docker-template
+git clone https://github.com/mendescrafael/docker-template.git meu-projeto
+cd meu-projeto
+rm -rf .git
+git init -b main
 ```
 
 ## Preparação
@@ -75,7 +78,7 @@ Antes da primeira execução, substitua as referências genéricas, os placehold
 
 Revise:
 
-- `{Nome do projeto}`;
+- Título `Docker Template` usado como identidade inicial;
 - Nome e descrição do projeto;
 - Autores e licença;
 - Nome da aplicação;
@@ -102,13 +105,14 @@ Revise o Dockerfile para garantir que ele:
 
 - Utilize as imagens base adequadas;
 - Instale as dependências necessárias;
-- Copie a aplicação para `APP_DIR` no estágio `BASE`, com proprietário e grupo do servidor web;
-- Preserve o estágio `BASE` para o código, o `ENTRYPOINT`, os templates, os certificados e os pacotes comuns;
+- Copie a aplicação para `APP_DIR` no estágio `BASE`, com proprietário e grupo definidos por `APP_RUNTIME_USER` e `APP_RUNTIME_GROUP`;
+- Preserve o estágio `BASE` para o código, o `ENTRYPOINT` e os pacotes comuns; adicione processos auxiliares somente quando a aplicação derivada realmente precisar deles;
 - Utilize o estágio `APP` para dependências e configurações comuns da aplicação;
-- Preserve o estágio `DEV` para as ferramentas e configurações de desenvolvimento;
-- Preserve o estágio `PRD` para as configurações de desempenho e segurança e para a limpeza da imagem;
+- Preserve os estágios `DEV` e `PRD` para especializações do runtime PHP-FPM;
+- Preserve `WEB-BASE`, `WEB-DEV` e `WEB-PRD` para o Nginx e copie para eles somente o diretório público da aplicação;
+- Mantenha certificados fora das camadas das imagens e monte-os no serviço `web`;
 - Defina corretamente `WORKDIR`, `ENTRYPOINT` e `CMD`;
-- Utilize em `APP_ENV` somente um target final existente, atualmente `dev` ou `prd`;
+- Utilize em `APP_BUILD_ENV` somente um target final existente, atualmente `dev` ou `prd`;
 
 ### Arquivos de ambiente
 
@@ -129,20 +133,24 @@ O Makefile lê diretamente estas variáveis:
 
 ```text
 APP_BASE_IMG
-APP_NAME
+APP_BUILD_ENV
 APP_VERSION
+APP_RUNTIME_USER
+APP_RUNTIME_GROUP
 CLIENT_ID
 DB_BASE_IMG
 DOCKER_GROUP
 LICENSE
+PROJECT_LABEL
 PROJECT_NAME
 PROJECT_DESCRIPTION
 PROJECT_AUTHORS
-WEBSERVER_USER
-WEBSERVER_GROUP
+WEBSERVER_BASE_IMG
 ```
 
 Preencha também todas as demais variáveis utilizadas pelo Dockerfile, pelo Docker Compose, pelos templates e pelo `ENTRYPOINT`.
+
+As variáveis `APP_NAME`, `APP_ENV`, `APP_DEBUG`, `APP_URL` e `APP_KEY` pertencem à aplicação consumidora e são encaminhadas pelo Docker Compose ao container `app`. Defina os valores conforme o ambiente e mantenha `APP_KEY` vazio no exemplo até que o projeto derivado utilize o mecanismo próprio da aplicação para gerar a chave. `APP_ENV` configura a aplicação; a seleção dos targets Docker permanece sob responsabilidade de `APP_BUILD_ENV`.
 
 #### `.env.dev`
 
@@ -195,11 +203,13 @@ Revise os arquivos Docker Compose para refletir os serviços e recursos da aplic
 
 #### Produção
 
-O arquivo `docker-compose.yml` define o serviço da aplicação, a rede, os bind mounts persistentes de configuração e arquivos, as portas HTTP e HTTPS e os demais recursos necessários à execução em produção. O banco de dados deve permanecer externo ao Compose, salvo quando a arquitetura for deliberadamente modificada.
+O arquivo `docker-compose.yml` define dois serviços de runtime: `app`, baseado em PHP-FPM, e `web`, baseado em Nginx. O serviço `web` publica HTTP/HTTPS, monta os certificados somente leitura e encaminha requisições PHP para `app` via FastCGI. O banco de dados permanece externo ao Compose em produção, salvo quando a arquitetura for deliberadamente modificada.
 
-O serviço utiliza `restart: always`, verifica a aplicação por HTTP em `http://localhost` a cada 60 segundos, com timeout de 10 segundos, três tentativas e período inicial de 90 segundos. Os logs usam o driver `json-file`, limitado a cinco arquivos de 10 MB. O target de build é obtido de `APP_ENV`.
+Os serviços `app` e `web` utilizam `restart: always`. O healthcheck de `app` verifica a porta FastCGI do PHP-FPM; o healthcheck de `web` consulta `http://127.0.0.1:${WEBSERVER_PORT}/health`. Os logs usam o driver `json-file`, limitado a cinco arquivos de 10 MB. O target de `app` é obtido de `APP_BUILD_ENV`, enquanto o target do Nginx é `web-${APP_BUILD_ENV}`.
 
-O VirtualHost HTTP redireciona as requisições para HTTPS. O estágio `DEV` declara as duas portas com `EXPOSE`, enquanto o estágio `PRD` declara somente a porta HTTPS; o Compose ainda publica os dois mapeamentos porque `EXPOSE` funciona apenas como metadado da imagem.
+O server block HTTP do Nginx mantém `/health` disponível localmente e redireciona as demais requisições para HTTPS. O Nginx publica as portas definidas em `WEBSERVER_PORT` e `WEBSERVER_PORT_SSL`; o PHP-FPM permanece acessível somente pela rede interna do Compose na porta `PHP_FPM_PORT`.
+
+Em produção, os targets `WEB-PRD` recebem uma cópia do diretório público gerado pelo target PHP `PRD`. Se a aplicação criar arquivos públicos em runtime, não dependa dessa cópia imutável: configure um volume compartilhado específico entre `app` e `web` ou, preferencialmente, um storage externo/objeto apropriado à aplicação.
 
 #### Desenvolvimento
 
@@ -208,8 +218,9 @@ O arquivo `docker-compose.dev.yml` complementa o Compose principal com:
 - Serviço de banco de dados MySQL;
 - Volume persistente do banco de dados;
 - Diretório de dumps;
-- Bind mount `./app:${APP_DIR}:rw`, que substitui no container o código incorporado à imagem;
-- Portas locais;
+- Bind mount `./app:${APP_DIR}:rw` no serviço `app`, que substitui o código incorporado à imagem;
+- Bind mount `./app/public:${WEBSERVER_SITE_ROOT_DIR}:ro` no serviço `web`, permitindo servir os arquivos públicos em desenvolvimento;
+- Portas HTTP/HTTPS publicadas somente pelo Nginx;
 - Política `restart: no` para os serviços locais;
 - Verificação do MySQL a cada 30 segundos, com timeout de 10 segundos, três tentativas e período inicial de 20 segundos;
 - Rotação dos logs do MySQL em cinco arquivos de 10 MB;
@@ -220,6 +231,7 @@ Mantenha os nomes dos serviços compatíveis com as variáveis do Makefile:
 
 ```make
 SERVICE_APP ?= app
+SERVICE_WEB ?= web
 SERVICE_DB ?= db
 ```
 
@@ -233,11 +245,11 @@ Os arquivos em:
 data/utils/templates/
 ```
 
-devem conter a estrutura das configurações do servidor web e do agendador.
+devem conter a estrutura das configurações do Nginx. `app-site-cfg.conf.template` e `app-site-vhost.conf.template` são copiados para `/etc/nginx/templates/` e processados pelo `ENTRYPOINT` oficial do Nginx.
 
 Defina os valores nos arquivos `.env` e `.env.dev`, e não diretamente nos templates.
 
-Adapte os templates quando a aplicação exigir mudanças estruturais, como diretório público, domínio, proxy reverso, certificados, cabeçalhos, regras de reescrita, agendamento de tarefas e caminhos internos.
+Adapte os templates quando a aplicação exigir mudanças estruturais, como diretório público, domínio, proxy reverso, certificados, cabeçalhos, regras de reescrita e caminhos internos.
 
 ### ENTRYPOINT
 
@@ -249,21 +261,18 @@ data/utils/app-entrypoint
 
 deve ser adaptado à aplicação hospedada.
 
-A rotina valida variáveis e caminhos obrigatórios, processa os templates, prepara os diretórios persistentes, configura o Cron e o Apache e, por fim, substitui o processo do script por `apache2-foreground`.
+A rotina valida as variáveis e o diretório da aplicação e executa o comando principal recebido do Dockerfile. Por padrão, o `CMD` é `php-fpm`. A configuração do Nginx é processada separadamente pelo `ENTRYPOINT` oficial da imagem `nginx`.
 
-O Dockerfile não define `USER`, portanto o `ENTRYPOINT` inicia como `root`. Esse privilégio é necessário para ajustar propriedades e modos, escrever configurações em `/etc`, iniciar o Cron e preparar o Apache. O template do Cron e os alvos que reutilizarem `run_app_command` executam a aplicação com o usuário definido em `WEBSERVER_USER`; a imagem base do servidor web deve manter seus processos de atendimento compatíveis com esse mesmo usuário e grupo.
+O Dockerfile da aplicação não define `USER`, portanto o `ENTRYPOINT` inicia como `root` e entrega o processo principal ao PHP-FPM. Os workers do PHP-FPM e os alvos que reutilizarem `run_app_command` utilizam o usuário definido em `APP_RUNTIME_USER`; o Nginx executa em container independente com o usuário próprio da imagem oficial.
 
-As permissões do código incorporado à imagem são normalizadas durante o build: proprietário e grupo definidos por `WEBSERVER_USER` e `WEBSERVER_GROUP`, diretórios `750` e arquivos `640`. Dessa forma, o processo web pode acessar a aplicação sem conceder acesso aos demais usuários do sistema.
+As permissões do código incorporado à imagem PHP são normalizadas durante o build: proprietário e grupo definidos por `APP_RUNTIME_USER` e `APP_RUNTIME_GROUP`, diretórios `750` e arquivos `640`. Os targets Nginx recebem somente o conteúdo de `${APP_DIR}/public`, copiado para a imagem web com propriedade `nginx:nginx`.
 
-Depois da montagem dos volumes, o `ENTRYPOINT` inicializa `APP_CONFIG_DIR` e `APP_FILES_DIR` com o mesmo proprietário e grupo, diretórios `2770` e arquivos `660`. Ambos integram a validação de diretórios obrigatórios e são criados quando não existem.
+O template não define diretórios persistentes genéricos para a aplicação. Quando um projeto derivado precisar deles, declare caminhos, mounts, permissões e rotinas de inicialização conforme a responsabilidade concreta da aplicação.
 
-O ajuste é recursivo somente quando o proprietário, o grupo ou o modo do diretório raiz não corresponde ao padrão. Nas inicializações seguintes, o processamento é ignorado. O bit `setgid` mantém o grupo definido por `WEBSERVER_GROUP` nos novos arquivos e diretórios criados nesses caminhos.
+No desenvolvimento, o bind mount de `./app` substitui o conteúdo e as permissões incorporados à imagem PHP. Preserve no hospedeiro a leitura e a travessia necessárias ao usuário de runtime da aplicação. O Nginx recebe `./app/public` em modo somente leitura.
 
-No desenvolvimento, o bind mount de `./app` substitui o conteúdo e as permissões incorporados à imagem. O `ENTRYPOINT` não normaliza todo o código montado; ele ajusta somente `APP_CONFIG_DIR` e `APP_FILES_DIR`. Preserve no hospedeiro a leitura e a travessia necessárias ao usuário do servidor web.
 
-Os diretórios de certificados recebem modo `710` e seus arquivos, modo `640`. O arquivo gerado para o Cron recebe modo `644` antes da inicialização do serviço. O usuário do agendamento é obtido de `WEBSERVER_USER`; substitua o comando genérico `date` no template pela rotina exigida pela aplicação.
-
-> **Atenção:** a validação atual registra nos logs o nome e o valor das variáveis obrigatórias, inclusive as variáveis de conexão com o banco de dados. Restrinja o acesso aos logs do container e não os compartilhe sem sanitização.
+> **Segurança:** a validação registra somente o nome das variáveis obrigatórias, nunca seus valores. Continue tratando logs como dados operacionais e sanitize qualquer conteúdo específico da aplicação antes de compartilhá-lo.
 
 Evite operações destrutivas, migrações irreversíveis ou rotinas que não possam ser executadas novamente com segurança.
 
@@ -288,7 +297,7 @@ Nunca versione chaves privadas reais.
 
 ### Grupos do usuário
 
-Depois de preencher `.env`, confira os valores de `DOCKER_GROUP` e `WEBSERVER_GROUP`.
+Depois de preencher `.env`, confira os valores de `DOCKER_GROUP` e `APP_RUNTIME_GROUP`.
 
 Adicione o usuário atual aos grupos configurados:
 
@@ -323,7 +332,7 @@ O comando aplica recursivamente:
 
 > **Atenção:** o alvo utiliza `sudo chown` e `sudo chmod` em toda a raiz do projeto. Revise o conteúdo do diretório antes de executá-lo.
 
-Esse alvo corrige as permissões do workspace no hospedeiro. Ao iniciar ou reiniciar o container, o `ENTRYPOINT` aplica o padrão específico da aplicação somente a `APP_CONFIG_DIR` e `APP_FILES_DIR`; ele não reaplica `750` e `640` a todo o bind mount de código do ambiente de desenvolvimento.
+Esse alvo corrige as permissões do workspace no hospedeiro. O padrão `750` e `640` aplicado durante o build não é reaplicado pelo `ENTRYPOINT` a todo o bind mount de código do ambiente de desenvolvimento.
 
 ## Verificação
 
@@ -466,7 +475,7 @@ O Makefile contém uma área reservada para alvos próprios da aplicação:
 
 Adicione os novos alvos imediatamente antes de `help` e inclua suas descrições no próprio alvo `help`.
 
-Quando o comando não exigir privilégios administrativos, reutilize `run_app_command` para executá-lo no container como `WEBSERVER_USER`. Por exemplo:
+Quando o comando não exigir privilégios administrativos, reutilize `run_app_command` para executá-lo no container como `APP_RUNTIME_USER`. Por exemplo:
 
 ```make
 minhaapp-tarefa: check
@@ -503,7 +512,7 @@ minhaapp-clear-cache
 
 Antes de considerar o projeto adaptado, confirme:
 
-- O placeholder `{Nome do projeto}` foi substituído;
+- O título `Docker Template` foi substituído pela identidade do projeto derivado;
 - O código da aplicação foi incluído em `app/`;
 - As imagens base foram definidas;
 - `.env.example` e `.env.dev.example` foram adaptados;
@@ -512,7 +521,9 @@ Antes de considerar o projeto adaptado, confirme:
 - Os serviços usam os nomes esperados pelo Makefile;
 - O Dockerfile foi adaptado;
 - O `ENTRYPOINT` foi adaptado;
-- `WEBSERVER_USER` e `WEBSERVER_GROUP` correspondem ao usuário e ao grupo disponíveis na imagem base;
+- `APP_RUNTIME_USER` e `APP_RUNTIME_GROUP` correspondem ao usuário e ao grupo disponíveis na imagem PHP-FPM;
+- `PHP_FPM_HOST` e `PHP_FPM_PORT` correspondem ao serviço e à porta internos usados pelo Nginx;
+- `WEBSERVER_BASE_IMG` corresponde a uma imagem Nginx compatível;
 - Os templates foram adaptados;
 - Os certificados foram configurados;
 - Os volumes persistentes foram definidos;
@@ -592,9 +603,9 @@ Execute:
 make apply-permissions
 ```
 
-Revise também `DOCKER_GROUP`, `WEBSERVER_USER` e `WEBSERVER_GROUP`. Depois do ajuste no hospedeiro, reinicie o ambiente com `make restart-dev` no desenvolvimento ou `make restart` na produção para que o `ENTRYPOINT` inicialize os diretórios graváveis.
+Revise também `DOCKER_GROUP`, `APP_RUNTIME_USER` e `APP_RUNTIME_GROUP`. Depois do ajuste no hospedeiro, reinicie o ambiente com `make restart-dev` no desenvolvimento ou `make restart` na produção.
 
-Se a falha ocorrer somente no desenvolvimento, lembre-se de que `./app:${APP_DIR}:rw` substitui as permissões definidas no build. Confirme que o usuário do servidor web consegue atravessar `APP_DIR`, ler os arquivos da aplicação e gravar somente nos caminhos persistentes exigidos pela implementação.
+Se a falha ocorrer somente no desenvolvimento, lembre-se de que `./app:${APP_DIR}:rw` substitui as permissões definidas no build. Confirme que `APP_RUNTIME_USER` consegue atravessar `APP_DIR`, ler os arquivos da aplicação e gravar somente nos caminhos persistentes exigidos pela implementação.
 
 ### Erros do Docker Compose
 
@@ -632,7 +643,7 @@ Analise os logs antes de reconstruir ou remover recursos.
 
 ### Certificados não encontrados
 
-Confirme que `data/utils/ssl/` contém os certificados ativos com os nomes esperados pela configuração da aplicação. Os arquivos `.example` servem apenas como modelos e não são utilizados como certificados ativos pelo `ENTRYPOINT`.
+Confirme que `data/utils/ssl/` contém os certificados ativos com os nomes esperados pela configuração do Nginx. Os arquivos `.example` servem apenas como modelos. O diretório é montado no serviço `web` em modo somente leitura e não é incorporado às imagens.
 
 ## Segurança
 

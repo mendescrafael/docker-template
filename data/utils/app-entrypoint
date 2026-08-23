@@ -7,7 +7,7 @@
 # @license   GPLv3+ <https://www.gnu.org/licenses/gpl-3.0.html>
 # @link      GitHub <https://github.com/mendescrafael>
 #
-# This file is part of {Nome do projeto}.
+# This file is part of Docker Template.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -38,9 +38,6 @@ log() {
 
 # Validação de variáveis de ambiente obrigatórias.
 validate_envs() {
-    local type="$1"
-    shift
-
     log "Validando variáveis de ambiente obrigatórias..."
 
     for var in "$@"; do
@@ -49,10 +46,10 @@ validate_envs() {
             exit 1
         fi
 
-        log "[ OK ] Variável obrigatória definida: '${var}=${!var}'"
+        log "[ OK ] Variável obrigatória definida: '${var}'"
     done
 
-    log "[ OK ] Todos as variáveis obrigatórias foram definidas"
+    log "[ OK ] Todas as variáveis obrigatórias foram definidas"
 }
 
 # Validação dos diretórios e arquivos obrigatórios.
@@ -65,40 +62,20 @@ validate_paths() {
             log "Validando diretórios obrigatórios..."
 
             for path in "$@"; do
-                [[ -z "${path}" ]] && {
-                    log "[ ERROR ] Caminho de diretório vazio"
+                [[ -d "${path}" ]] || {
+                    log "[ ERROR ] Diretório obrigatório não encontrado: '${path}'"
                     exit 1
                 }
-
-                if [[ ! -d "${path}" ]]; then
-                    log "[ INFO ] Diretório '${path}' não encontrado. Criando..."
-
-                    mkdir -p "${path}" || {
-                        log "[ ERROR ] Não foi possível criar o diretório: '${path}'"
-                        exit 1
-                    }
-
-                    log "[ OK ] Diretório criado: '${path}'"
-                else
-                    log "[ OK ] Diretório encontrado: '${path}'"
-                fi
             done
             ;;
         file)
             log "Validando arquivos obrigatórios..."
-
+            
             for path in "$@"; do
-                [[ -z "${path}" ]] && {
-                    log "[ ERROR ] Caminho de arquivo vazio"
-                    exit 1
-                }
-
-                if [[ ! -f "${path}" ]]; then
+                [[ -f "${path}" ]] || {
                     log "[ ERROR ] Arquivo obrigatório não encontrado: '${path}'"
                     exit 1
-                fi
-
-                log "[ OK ] Arquivo encontrado: '${path}'"
+                }
             done
             ;;
         *)
@@ -110,126 +87,15 @@ validate_paths() {
     log "[ OK ] Validação concluída com sucesso"
 }
 
-# Substituição de variáveis dos templates.
-expand_templates() {
-    local vars="$1"
-    local src="$2"
-    local dst="$3"
-
-    log "Substituindo variáveis do template '${src}'..."
-    envsubst "${vars}" \
-        < "${src}" \
-        > "${dst}"
-    log "[ OK ] Substituição realizada com sucesso. Arquivo copiado para '${dst}'"
-}
-
-# Inicialização de um diretório gravável pela aplicação.
-initialize_writable_dir() {
-    local path="$1"
-    local uid_gid
-    local current_uid_gid
-    local current_mode
-
-    uid_gid="$(id -u "${WEBSERVER_USER}"):$(getent group "${WEBSERVER_GROUP}" | cut -d: -f3)"
-    current_uid_gid="$(stat -c '%u:%g' "${path}")"
-    current_mode="$(stat -c '%a' "${path}")"
-
-    if [[ "${current_uid_gid}" == "${uid_gid}" && "${current_mode}" == "2770" ]]; then
-        log "[ OK ] Permissões já inicializadas para '${path}'. Ajuste recursivo ignorado"
-        return
+# Inicialização do processo principal.
+start_main_process() {
+    if [[ "$#" -eq 0 ]]; then
+        log "[ ERROR ] Nenhum comando principal foi informado ao container"
+        exit 1
     fi
 
-    log "Inicializando permissões de '${path}'..."
-
-    # O modo temporário sinaliza uma inicialização incompleta caso o processo seja
-    # interrompido antes da aplicação do modo definitivo no diretório raiz.
-    chmod 700 "${path}" \
-        && chown -R "${WEBSERVER_USER}:${WEBSERVER_GROUP}" "${path}" \
-        && find "${path}" -mindepth 1 -type d -exec chmod 2770 {} + \
-        && find "${path}" -type f -exec chmod 660 {} + \
-        && chmod 2770 "${path}" \
-        && log "[ OK ] Permissões inicializadas com sucesso para '${path}'"
-}
-
-# Configuração da aplicação.
-app_config() {
-    log "Inicializando configurações da aplicação..."
-
-    # O código incorporado à imagem é preparado durante o build. Somente os
-    # diretórios graváveis precisam de inicialização específica em runtime.
-    initialize_writable_dir "${APP_CONFIG_DIR}"
-    initialize_writable_dir "${APP_FILES_DIR}"
-}
-
-# Configuração do Cron.
-cron_config() {
-    log "Inicializando configurações do Cron..."
-
-    # Substituição de variáveis do template Cron.
-    local vars='${APP_DIR} ${WEBSERVER_USER}'
-    expand_templates \
-        "${vars}" \
-        "${CRON_TEMPLATE_FILE}" \
-        "${CRON_FILE}"
-
-    # Ajuste de permissões no arquivo cron.
-    log "Ajustando permissões do arquivo cron '${CRON_FILE}'..."
-    test -f "${CRON_FILE}" \
-        && chmod 644 "${CRON_FILE}" \
-        && log "[ OK ] Permissões para '${CRON_FILE}' ajustadas com sucesso"
-
-    # Exporta todas as variáveis do ambiente para o cron.
-    log "Exportando variáveis de ambiente para '/etc/environment'..."
-    printenv | grep -v "no_proxy" > /etc/environment \
-        && log "[ OK ] Variáveis exportadas com sucesso"
-
-    # Inicia o serviço de cron.
-    log "Iniciando serviço Cron..."
-    service cron start \
-        && log "[ OK ] Cron iniciado com sucesso"
-}
-
-# Configuração do web server.
-webserver_config() {
-    log "Inicializando configurações do web server..."
-
-    # Substituição de variáveis de configuração do site para o web server.
-    local vars_app_cnf='${APP_SERVICE} ${APP_ENV}'
-    expand_templates \
-        "${vars_app_cnf}" \
-        "${WEBSERVER_CFG_TEMPLATE}" \
-        "${WEBSERVER_CFG_FILE}"
-
-    # Substituição de variáveis do site para o web server.
-    local vars_app_site='${WEBSERVER_PORT} ${WEBSERVER_PORT_SSL} ${WEBSERVER_DOMAIN_NAME} ${WEBSERVER_SITE_ROOT_DIR} ${WEBSERVER_ADMIN_EMAIL} ${SSL_CERT_FILE} ${SSL_KEY_FILE}'
-    expand_templates \
-        "${vars_app_site}" \
-        "${WEBSERVER_VHOST_TEMPLATE}" \
-        "${WEBSERVER_VHOST_FILE}"
-
-    # Ajuste de permissões do diretório de certificados SSL.
-    log "Ajustando permissões de '${SSL_DIR}'..."
-    find "${SSL_DIR}" -type d -exec chmod 710 {} \; \
-        && find "${SSL_DIR}" -type f -exec chmod 640 {} \; \
-        && log "[ OK ] Permissões ajustadas com sucesso para '${SSL_DIR}'"
-
-    # Habilitando configurações do web server.
-    log "Habilitando configurações do web server..."
-    local app_cfg=$(basename "${WEBSERVER_CFG_FILE}")
-    local app_vhost=$(basename "${WEBSERVER_VHOST_FILE}")
-    local default_vhost="000-default.conf"
-    a2enconf "${app_cfg}" \
-        && a2ensite "${app_vhost}" \
-        && a2dissite "${default_vhost}" \
-        && log "[ OK ] Configurações habilitadas com sucesso"
-
-    # Validação das configurações.
-    log "Validando configuração do web server..."
-    apache2ctl configtest || exit 1
-
-    # Inicia o processo principal do container.
     log "Iniciando processo principal (${APP_SERVICE})..."
-    exec apache2-foreground
+    exec "$@"
 }
 
 # Função principal de inicialização.
@@ -239,56 +105,20 @@ main() {
     # Validação de variáveis de ambiente obrigatórias.
     validate_envs \
         "APP_DIR" \
-        "APP_CONFIG_DIR" \
-        "APP_FILES_DIR" \
         "APP_SERVICE" \
-        "CRON_DIR" \
-        "CRON_TEMPLATE_FILE" \
-        "CRON_FILE" \
+        "APP_RUNTIME_USER" \
+        "APP_RUNTIME_GROUP" \
         "DB_HOST" \
+        "DB_PORT" \
         "DB_USER" \
         "DB_PASS" \
-        "DB_NAME" \
-        "APP_ENV" \
-        "SSL_DIR" \
-        "SSL_CERT_FILE" \
-        "SSL_KEY_FILE" \
-        "TEMPLATES_DIR" \
-        "WEBSERVER_DIR" \
-        "WEBSERVER_CFG_TEMPLATE" \
-        "WEBSERVER_CFG_FILE" \
-        "WEBSERVER_VHOST_TEMPLATE" \
-        "WEBSERVER_VHOST_FILE" \
-        "WEBSERVER_SITE_ROOT_DIR" \
-        "WEBSERVER_DOMAIN_NAME" \
-        "WEBSERVER_ADMIN_EMAIL" \
-        "WEBSERVER_PORT" \
-        "WEBSERVER_PORT_SSL" \
-        "WEBSERVER_USER" \
-        "WEBSERVER_GROUP"
+        "DB_NAME"
 
     # Validação dos diretórios obrigatórios.
     validate_paths dir \
-        "${APP_DIR}" \
-        "${APP_CONFIG_DIR}" \
-        "${APP_FILES_DIR}" \
-        "${CRON_DIR}" \
-        "${SSL_DIR}" \
-        "${TEMPLATES_DIR}" \
-        "${WEBSERVER_DIR}" \
-        "${WEBSERVER_SITE_ROOT_DIR}"
-
-    # Validação dos arquivos obrigatórios.
-    validate_paths file \
-        "${CRON_TEMPLATE_FILE}" \
-        "${WEBSERVER_CFG_TEMPLATE}" \
-        "${WEBSERVER_VHOST_TEMPLATE}" \
-        "${SSL_CERT_FILE}" \
-        "${SSL_KEY_FILE}"
-
-    app_config
-    cron_config
-    webserver_config
+        "${APP_DIR}"
+    
+    start_main_process "$@"
 }
 
-main
+main "$@"

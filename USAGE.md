@@ -11,7 +11,8 @@ Confirme que o projeto já foi adaptado e instalado conforme o [guia de instala�
 - Mantenha os arquivos `.env` e `.env.dev` preenchidos;
 - Adicione o código ou os artefatos da aplicação em `app/`;
 - Configure os certificados esperados em `data/utils/ssl/`;
-- Confirme que `WEBSERVER_USER` e `WEBSERVER_GROUP` existem na imagem base e correspondem ao processo web;
+- Confirme que `APP_RUNTIME_USER` e `APP_RUNTIME_GROUP` existem na imagem PHP-FPM e correspondem ao runtime da aplicação;
+- Confirme que `PHP_FPM_HOST` e `PHP_FPM_PORT` correspondem ao serviço `app` e à porta FastCGI interna;
 - Garanta que o usuário atual possa executar o Docker;
 - Execute os comandos na raiz do projeto;
 
@@ -36,11 +37,14 @@ Os comandos com o sufixo `-dev` usam o ambiente de desenvolvimento. Os equivalen
 | Comandos | `make <comando>-dev` | `make <comando>` |
 | Arquivos Compose | `docker-compose.yml` e `docker-compose.dev.yml` | `docker-compose.yml` |
 | Arquivos de ambiente | `.env` e `.env.dev` | `.env` |
-| Aplicação | Container com `app/` montado no diretório da aplicação | Container com o código incorporado à imagem |
+| Aplicação PHP-FPM | Container com `app/` montado no diretório da aplicação | Container com o código incorporado à imagem |
+| Nginx | `app/public/` montado somente leitura | Diretório público copiado do target PHP correspondente |
 | Banco de dados | Serviço `db` em container | Serviço externo à stack |
 | Reinício automático | Desativado | Ativado |
 
-Antes de executar um comando, confirme o ambiente pelo sufixo. Os dois ambientes podem criar recursos com nomes semelhantes, definidos por `APP_NAME`, `CLIENT_ID` e `APP_ENV`.
+Antes de executar um comando, confirme o ambiente pelo sufixo. `PROJECT_LABEL` fornece o nome legível do projeto, enquanto os recursos dos dois ambientes recebem nomes técnicos definidos por `PROJECT_NAME`, `CLIENT_ID` e `APP_BUILD_ENV`.
+
+O Docker Compose encaminha `APP_NAME`, `APP_ENV`, `APP_DEBUG`, `APP_URL` e `APP_KEY` ao container `app`. Os valores de produção vêm de `.env`; no desenvolvimento, `.env.dev` complementa ou substitui os valores comuns. Depois de alterá-los, execute o comando `up` correspondente para recriar o container com o ambiente atualizado.
 
 ## Operações
 
@@ -79,7 +83,7 @@ Para acompanhar a inicialização:
 make logs
 ```
 
-O endereço da aplicação depende de `WEBSERVER_DOMAIN_NAME`, `WEBSERVER_PORT` e `WEBSERVER_PORT_SSL`. Use o protocolo correspondente ao virtual host e aos certificados configurados para o ambiente.
+O endereço da aplicação depende de `WEBSERVER_DOMAIN_NAME`, `WEBSERVER_PORT` e `WEBSERVER_PORT_SSL`. O Nginx atende HTTP/HTTPS e encaminha somente as requisições PHP para `PHP_FPM_HOST:PHP_FPM_PORT`.
 
 ### Ciclo de vida dos serviços
 
@@ -136,9 +140,9 @@ Use `Ctrl+C` para encerrar o acompanhamento. Isso não interrompe os containers 
 
 O Docker Compose limita os logs de cada serviço a cinco arquivos de 10 MB pelo driver `json-file`. Encaminhe os logs para uma solução externa quando o histórico exigido exceder essa retenção local.
 
-O healthcheck da aplicação consulta `http://localhost` a cada 60 segundos, após um período inicial de 90 segundos. No desenvolvimento, o MySQL é verificado a cada 30 segundos, após um período inicial de 20 segundos. Ambos usam timeout de 10 segundos e três tentativas.
+O healthcheck de `app` verifica se o PHP-FPM aceita conexão TCP na porta `PHP_FPM_PORT`; o healthcheck de `web` consulta o endpoint interno `/health` do Nginx. No desenvolvimento, o MySQL também possui healthcheck próprio. O Nginx somente inicia após `app` ficar saudável, e o `app` de desenvolvimento aguarda o banco saudável.
 
-### Acesso ao container da aplicação
+### Acesso aos containers da aplicação
 
 Com o serviço `app` em execução, abra um shell Bash no container:
 
@@ -155,9 +159,18 @@ Se o nome do serviço da aplicação for diferente de `app`, informe-o na execu�
 make app-shell-dev SERVICE_APP=<SERVICO>
 ```
 
+Para abrir um shell no container Nginx:
+
+```bash
+make web-shell-dev
+make web-shell
+```
+
+Se o nome do serviço web for diferente de `web`, informe `SERVICE_WEB=<SERVICO>`.
+
 ### Comandos específicos da aplicação
 
-O template não define comandos administrativos para uma aplicação específica. Ao adaptar o Makefile, crie alvos com e sem o sufixo `-dev` e reutilize `run_app_command` quando a operação deva ocorrer como `WEBSERVER_USER`:
+O template não define comandos administrativos para uma aplicação específica. Ao adaptar o Makefile, crie alvos com e sem o sufixo `-dev` e reutilize `run_app_command` quando a operação deva ocorrer como `APP_RUNTIME_USER`:
 
 ```make
 minhaapp-tarefa: check
@@ -221,7 +234,8 @@ Use a operação correspondente ao tipo de alteração:
 | Código em `app/` | Refletido pelo bind mount; reinicie somente se a aplicação exigir | Execute `make rebuild` |
 | Dockerfile ou dependências da imagem | Execute `make rebuild-dev` | Execute `make rebuild` |
 | `.env`, `.env.dev` ou arquivo Compose | Valide e execute `make up-dev` | Valide e execute `make up` |
-| `ENTRYPOINT`, templates ou certificados incorporados à imagem | Execute `make rebuild-dev` | Execute `make rebuild` |
+| `ENTRYPOINT` ou templates incorporados às imagens | Execute `make rebuild-dev` | Execute `make rebuild` |
+| Certificados em `data/utils/ssl/` | Execute `make up-dev` ou reinicie `web` | Execute `make up` ou reinicie `web` |
 | Conteúdo persistente da aplicação | Siga o procedimento próprio da aplicação | Siga o procedimento próprio da aplicação |
 
 Após qualquer alteração, confira o estado e os logs do ambiente correspondente.
@@ -232,8 +246,6 @@ Após qualquer alteração, confira o estado e os logs do ambiente correspondent
 
 | Recurso | Desenvolvimento | Produção |
 | --- | --- | --- |
-| Configuração da aplicação | `data/app/config/` | `data/app/config/` |
-| Arquivos da aplicação | `data/app/files/` | `data/app/files/` |
 | Código-fonte da aplicação | Bind mount de `app/` | Conteúdo incorporado à imagem |
 | Dados do banco | Volume nomeado `db_vol` | Banco externo à stack |
 | Dumps do banco | `data/db/dumps/` disponível no container | Definido pela infraestrutura externa |
@@ -241,11 +253,12 @@ Após qualquer alteração, confira o estado e os logs do ambiente correspondent
 Antes de reconstruir ou atualizar:
 
 - Faça backup do banco de dados;
-- Preserve `data/app/config/` e `data/app/files/`;
 - Confirme o destino e a retenção dos backups;
 - Teste a restauração em um ambiente não produtivo;
 
-O código incorporado à imagem pertence a `WEBSERVER_USER:WEBSERVER_GROUP`, com diretórios `750` e arquivos `640`. Em runtime, `APP_CONFIG_DIR` e `APP_FILES_DIR` usam diretórios `2770`, arquivos `660` e o bit `setgid` para preservar o grupo do servidor web.
+O código incorporado à imagem PHP pertence a `APP_RUNTIME_USER:APP_RUNTIME_GROUP`, com diretórios `750` e arquivos `640`. A imagem Nginx contém somente os arquivos de `${APP_DIR}/public` necessários para atendimento HTTP.
+
+Arquivos públicos criados ou alterados em runtime exigem uma estratégia adicional de compartilhamento entre `app` e `web` ou uso de storage externo. Não grave conteúdo dinâmico esperando que a cópia do diretório público incorporada à imagem Nginx seja atualizada automaticamente.
 
 ### Atualização
 
@@ -326,7 +339,7 @@ make config
 make validate
 ```
 
-Revise variáveis vazias, caminhos, portas em uso, nomes de serviços e o valor de `APP_ENV`.
+Revise variáveis vazias, caminhos, portas em uso, nomes de serviços e o valor de `APP_BUILD_ENV`.
 
 ### Container parado ou não saudável
 
@@ -341,11 +354,11 @@ Em produção, use os comandos sem `-dev`. Verifique especialmente variáveis ob
 
 Consulte os procedimentos de grupos e permissões no [guia de instalação](INSTALL.md#permissões). O alvo `make apply-permissions` altera recursivamente a propriedade e as permissões da raiz do projeto e deve ser usado somente depois de revisar seu escopo.
 
-Em seguida, use `make restart-dev` no desenvolvimento ou `make restart` na produção. O `ENTRYPOINT` não altera o código completo da aplicação: ele inicializa somente `APP_CONFIG_DIR` e `APP_FILES_DIR` quando o diretório raiz ainda não possui o padrão esperado.
+Em seguida, use `make restart-dev` no desenvolvimento ou `make restart` na produção. O `ENTRYPOINT` não altera o código completo da aplicação.
 
-No desenvolvimento, o bind mount `./app:${APP_DIR}:rw` substitui o código e as permissões gravados na imagem. Se um comando falhar, confirme que `WEBSERVER_USER` consegue atravessar `APP_DIR`, ler o executável ou script da aplicação e gravar apenas no diretório exigido pela operação.
+No desenvolvimento, o bind mount `./app:${APP_DIR}:rw` substitui o código e as permissões gravados na imagem PHP. Se um comando falhar, confirme que `APP_RUNTIME_USER` consegue atravessar `APP_DIR`, ler o executável ou script da aplicação e gravar apenas no diretório exigido pela operação. O Nginx recebe apenas `./app/public` em modo leitura.
 
-Os diretórios graváveis usam proprietário e grupo do servidor web, diretórios `2770`, arquivos `660` e o bit `setgid`. O código incorporado à imagem usa diretórios `750` e arquivos `640`, mas esse padrão de build não é reaplicado a todo o bind mount de desenvolvimento.
+O código incorporado à imagem usa diretórios `750` e arquivos `640`, mas esse padrão de build não é reaplicado a todo o bind mount de desenvolvimento.
 
 ### Alteração não aplicada
 
@@ -358,7 +371,7 @@ Confirme onde o arquivo é consumido:
 
 ### Logs da inicialização
 
-O `ENTRYPOINT` atual registra o nome e o valor das variáveis obrigatórias durante a validação, inclusive variáveis de conexão com o banco de dados. Trate os logs do container como conteúdo sensível, restrinja seu acesso e sanitize qualquer trecho antes de armazená-lo ou compartilhá-lo.
+O `ENTRYPOINT` registra apenas o nome das variáveis obrigatórias durante a validação e não imprime seus valores. Ainda assim, trate logs do container como conteúdo operacional sensível e sanitize mensagens específicas da aplicação antes de compartilhá-las.
 
 ## Ajuda e segurança
 
