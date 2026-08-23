@@ -31,23 +31,25 @@
 *.cmd text eol=crlf
 
 # Arquivos de texto usados pelo projeto.
-*.conf         text eol=lf
-*.example      text eol=lf
-*.md           text eol=lf diff=markdown
-*.php          text eol=lf diff=php
-*.sh           text eol=lf
-*.template     text eol=lf
-*.yaml         text eol=lf
-*.yml          text eol=lf
-.dockerignore  text eol=lf
-.env           text eol=lf
-.env.dev       text eol=lf
+*.css      text eol=lf diff=css
+*.example  text eol=lf
+*.js       text eol=lf
+*.json     text eol=lf
+*.md       text eol=lf diff=markdown
+*.mjs      text eol=lf
+*.neon     text eol=lf
+*.php      text eol=lf diff=php
+*.po       text eol=lf
+*.pot      text eol=lf
+*.svg      text eol=lf
+*.twig     text eol=lf
+*.xml      text eol=lf
+*.yml      text eol=lf
+*.yaml     text eol=lf
 .gitattributes text eol=lf
 .gitignore     text eol=lf
-Dockerfile     text eol=lf
 LICENSE        text eol=lf
 Makefile       text eol=lf
-app-entrypoint text eol=lf
 
 # -----------------------------------------------------------------------------
 # Arquivos binários.
@@ -81,18 +83,31 @@ app-entrypoint text eol=lf
 # -----------------------------------------------------------------------------
 # Classificação de dependências e arquivos gerados no GitHub Linguist.
 # -----------------------------------------------------------------------------
-app/vendor/**              -text linguist-vendored=true
-app/public/lib/**          linguist-vendored=true
-app/public/build/**        linguist-generated=true
-app/public/css_compiled/** linguist-generated=true
-*.min.css                  linguist-generated=true
-*.min.js                   linguist-generated=true
-*.map                      linguist-generated=true
+vendor/**     -text linguist-vendored=true
+dist/**       linguist-generated=true
+locales/*.mo  linguist-generated=true
+*.min.css     linguist-generated=true
+*.min.js      linguist-generated=true
+*.map         linguist-generated=true
 
 # -----------------------------------------------------------------------------
 # Arquivos exclusivos de desenvolvimento, omitidos de pacotes via `git archive`.
 # -----------------------------------------------------------------------------
+tests/               export-ignore
+tools/               export-ignore
 .env                 export-ignore
 .env.dev             export-ignore
 .gitattributes       export-ignore
 .gitignore           export-ignore
+.php-cs-fixer.php    export-ignore
+.stylelintrc.js      export-ignore
+.twig_cs.dist.php    export-ignore
+composer.json        export-ignore
+composer.lock        export-ignore
+eslint.config.mjs    export-ignore
+package-lock.json    export-ignore
+package.json         export-ignore
+phpstan.neon         export-ignore
+phpunit.xml          export-ignore
+psalm.xml            export-ignore
+rector.php           export-ignore

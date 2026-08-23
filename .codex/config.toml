@@ -1,0 +1,53 @@
+# -----------------------------------------------------------------------------
+# Como reutilizar este arquivo.
+#
+# Este arquivo separa as configurações em dois grupos:
+#
+# - Diretrizes reutilizáveis: configurações base que devem permanecer iguais
+#   entre projetos;
+# - Especificidades deste projeto: configurações que devem ser revisadas para
+#   cada projeto.
+#
+# Ao copiar este arquivo para outro projeto, mantenha o bloco de diretrizes
+# reutilizáveis e altere somente o bloco de especificidades deste projeto.
+#
+# Este arquivo usa o modo de sandbox explícito do Codex para evitar ambiguidades
+# de precedência com perfis de permissões definidos em outras camadas.
+# Não combine estas opções com `default_permissions`, `[permissions.*]` ou
+# `[sandbox_workspace_write]` em outra camada de configuração.
+# -----------------------------------------------------------------------------
+
+# =============================================================================
+# Diretrizes reutilizáveis.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Configurações base.
+# -----------------------------------------------------------------------------
+
+# Não solicita aprovação interativa para execução de comandos.
+approval_policy = "never"
+
+# Remove as restrições locais do sandbox.
+sandbox_mode = "danger-full-access"
+
+# Permite ferramentas e comandos que necessitem de semântica de login shell.
+allow_login_shell = true
+
+# Habilita pesquisa web em tempo real.
+web_search = "live"
+
+# =============================================================================
+# Especificidades deste projeto.
+#
+# Ao reutilizar este arquivo, revise somente as configurações abaixo conforme
+# as necessidades do novo projeto.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Este projeto não define restrições adicionais de filesystem ou rede nesta
+# camada. O Codex pode executar os comandos necessários no ambiente local.
+#
+# Regras de comportamento, escopo e operações sensíveis permanecem sob controle
+# de AGENTS.md, do plano de desenvolvimento e dos prompts de cada fase/etapa.
+# -----------------------------------------------------------------------------

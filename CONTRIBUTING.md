@@ -59,10 +59,8 @@ Se precisar ajustar grupos ou permissões, siga as orientações do [INSTALL.md]
 ```text
 .
 ├── app/
+│   └── public/
 ├── data/
-│   ├── app/
-│   │   ├── config/
-│   │   └── files/
 │   ├── db/
 │   │   └── dumps/
 │   ├── misc/
@@ -72,8 +70,7 @@ Se precisar ajustar grupos ou permissões, siga as orientações do [INSTALL.md]
 │       │   └── cert-file.key.example
 │       ├── templates/
 │       │   ├── app-site-cfg.conf.template
-│       │   ├── app-site-vhost.conf.template
-│       │   └── app-cron.template
+│       │   └── app-site-vhost.conf.template
 │       └── app-entrypoint
 ├── .git/
 ├── .dockerignore
@@ -115,7 +112,6 @@ Os arquivos mantidos na raiz concentram a configuração dos ambientes, a automa
 - `.env` e `.env.dev`: Contêm configurações locais e não devem ser versionados;
 - `.env.example` e `.env.dev.example`: Documentam as variáveis aceitas com valores genéricos;
 - `app/`: Recebe o código-fonte ou os artefatos da aplicação que utilizará o template;
-- `data/app/`: Armazena configurações e arquivos persistentes da aplicação;
 - `data/db/dumps/` e `data/misc/`: Recebem dumps e artefatos locais que não pertencem ao repositório;
 - `data/utils/ssl/`: Recebe os certificados ativos, enquanto os arquivos `.example` preservam somente a nomenclatura esperada;
 
@@ -123,13 +119,17 @@ Os arquivos mantidos na raiz concentram a configuração dos ambientes, a automa
 
 Preserve o caráter reutilizável do template e avalie o impacto das mudanças sobre imagens, containers, volumes, redes, templates, persistência e inicialização.
 
+Ao criar um projeto derivado, use um histórico Git próprio na raiz e versione também o conteúdo de `app/`; não mantenha o `.git/` do Docker Template nem crie um `.git/` aninhado em `app/` por padrão.
+
 #### Diretrizes específicas do projeto
 
 ##### Ambientes e Docker
 
-- Preserve, sempre que possível, os estágios `BASE`, `APP`, `DEV` e `PRD` do Dockerfile e a separação de responsabilidades entre eles;
-- Mantenha no estágio `BASE` o código-fonte com suas permissões iniciais, o `ENTRYPOINT`, os templates, os certificados e os pacotes comuns; use o `APP` como ponto de extensão para dependências e configurações comuns da aplicação, o `DEV` para ferramentas de desenvolvimento e o `PRD` para configurações de desempenho, segurança e limpeza da imagem;
-- Considere que, por padrão, a aplicação e o banco de dados são executados em containers no desenvolvimento, enquanto o banco de produção é externo ao Docker Compose;
+- Preserve, sempre que possível, os estágios `BASE`, `APP`, `DEV` e `PRD` para PHP-FPM e `WEB-BASE`, `WEB-DEV` e `WEB-PRD` para Nginx;
+- Mantenha no estágio `BASE` do PHP o código-fonte, o `ENTRYPOINT`, os templates da aplicação e os pacotes comuns; use `APP` como ponto de extensão, `DEV` para ferramentas de desenvolvimento e `PRD` para otimizações de produção;
+- Mantenha `WEB-BASE` responsável somente pela configuração comum do Nginx e use `WEB-DEV`/`WEB-PRD` para copiar apenas o diretório público do target PHP correspondente;
+- Mantenha certificados fora das camadas das imagens, montando `data/utils/ssl/` em modo somente leitura no serviço `web`;
+- Considere que, por padrão, PHP-FPM, Nginx e banco de dados são executados em containers no desenvolvimento, enquanto o banco de produção é externo ao Docker Compose;
 - Evite acoplar a infraestrutura a uma única aplicação quando uma variável ou um template puder representar a configuração;
 - Preserve os metadados OCI, o gerenciamento adequado de sinais e as práticas de segurança das imagens;
 
@@ -137,6 +137,7 @@ Preserve o caráter reutilizável do template e avalie o impacto das mudanças s
 
 - Defina valores configuráveis em `.env` e `.env.dev`; não grave valores específicos do ambiente diretamente nos arquivos `.template`;
 - Ao criar, remover ou alterar uma variável, atualize os arquivos `.env.example` e `.env.dev.example` aplicáveis e a documentação;
+- Mantenha `APP_NAME`, `APP_ENV`, `APP_DEBUG`, `APP_URL` e `APP_KEY` encaminhadas somente ao serviço `app`, sem reutilizá-las como seletores da infraestrutura nem expor `APP_KEY` em metadados, logs ou no serviço `web`;
 - Use valores fictícios e seguros nos arquivos de exemplo;
 - Mantenha os templates em `data/utils/templates/` restritos às configurações parametrizáveis da aplicação e dos serviços auxiliares;
 - Faça alterações estruturais nos templates somente quando elas não puderem ser expressas por variáveis;
@@ -148,9 +149,9 @@ Preserve o caráter reutilizável do template e avalie o impacto das mudanças s
 - Preserve os nomes padrão dos serviços `app` e `db`. Se a alteração exigir outros nomes, atualize `SERVICE_APP` e `SERVICE_DB` no Makefile e documente a mudança;
 - Siga os padrões de nomenclatura de imagens, containers, hosts, volumes, redes e bancos de dados descritos no [README.md](README.md);
 - Declare explicitamente volumes persistentes e verifique se uma remoção ou recriação de containers não causa perda inesperada de dados;
-- Preserve no serviço `app` os bind mounts de configuração e arquivos, a política de reinicialização, a verificação de integridade e a rotação do driver de logs;
+- Preserve no serviço `app` a política de reinicialização, a verificação de integridade e a rotação do driver de logs;
 - Considere que o override de desenvolvimento substitui o código incorporado à imagem pelo bind mount `./app:${APP_DIR}:rw`, desativa a reinicialização automática e adiciona o serviço MySQL, seu volume nomeado e o diretório de dumps;
-- Mantenha `APP_ENV` compatível com os targets finais `dev` e `prd` disponíveis no Dockerfile;
+- Mantenha `APP_BUILD_ENV` compatível com os targets finais `dev` e `prd` disponíveis no Dockerfile;
 - Não exponha o banco de dados diretamente à internet;
 
 ##### Padrões de nomenclatura
@@ -160,9 +161,9 @@ Os nomes dos recursos devem permitir identificar rapidamente a aplicação, o cl
 ###### Componentes Docker Compose
 
 - Imagem (`image`): Use `<vendor>/<aplicacao>-<cliente>:<versao-aplicacao>-<git-hash>`, como `contoso/minhaapp-contoso:1.0.0-9bd1a79`;
-- Serviço (`service`): Use o nome funcional do serviço, como `app` para a aplicação e `db` para o banco de dados;
-- Container (`container_name`): Use `<nome-aplicacao>-<cliente>-<servico>-<aplicacao-servico>-<ambiente>`, como `minhaapp-contoso-db-mysql-prd`;
-- Host (`hostname`): Use `<servico>-<aplicacao-servico>-<ambiente>`, como `db-mysql-prd`;
+- Serviço (`service`): Use o nome funcional do serviço, como `app` para PHP-FPM, `web` para Nginx e `db` para o banco de dados;
+- Container (`container_name`): Use `<nome-aplicacao>-<cliente>-<papel>-<servico>-<ambiente>`, como `minhaapp-contoso-app-php-fpm-prd`, `minhaapp-contoso-web-nginx-prd` ou `minhaapp-contoso-db-mysql-dev`;
+- Host (`hostname`): Use `<papel>-<servico>-<ambiente>`, como `app-php-fpm-prd`, `web-nginx-prd` ou `db-mysql-dev`;
 - Volume persistente (`volumes`): Use `<nome-aplicacao>-<cliente>-<recurso-consumidor>-<ambiente>`, como `minhaapp-contoso-mysql-prd`;
 - Rede (`networks`): Use `<nome-aplicacao>-<cliente>`, como `minhaapp-contoso`;
 
@@ -175,11 +176,12 @@ Os nomes dos recursos devem permitir identificar rapidamente a aplicação, o cl
 - Mantenha `data/utils/app-entrypoint` compatível com as variáveis, os templates, os caminhos persistentes e os serviços utilizados pelo projeto;
 - Prefira rotinas idempotentes, que possam ser executadas mais de uma vez com segurança;
 - Evite migrações irreversíveis ou operações destrutivas durante a inicialização;
-- Preserve o permissionamento necessário para que a aplicação acesse suas configurações e seus arquivos persistentes;
-- Normalize durante o build as permissões e a propriedade do código incorporado à imagem e restrinja os ajustes do `ENTRYPOINT` aos diretórios graváveis;
-- Preserve no código incorporado à imagem a propriedade `WEBSERVER_USER:WEBSERVER_GROUP`, o modo `750` para diretórios e `640` para arquivos;
-- Inicialize em runtime somente `APP_CONFIG_DIR` e `APP_FILES_DIR`, usando diretórios `2770`, arquivos `660` e o bit `setgid` para herdar `WEBSERVER_GROUP`;
-- Preserve a execução inicial como `root`, necessária para preparar configurações do sistema, permissões, certificados, Cron e Apache; execute comandos específicos da aplicação como `WEBSERVER_USER` por meio da função `run_app_command` quando não exigirem privilégios administrativos;
+- Preserve o permissionamento necessário para que a aplicação acesse seus recursos;
+- Normalize durante o build as permissões e a propriedade do código incorporado à imagem;
+- Preserve no código incorporado à imagem PHP a propriedade `APP_RUNTIME_USER:APP_RUNTIME_GROUP`, o modo `750` para diretórios e `640` para arquivos;
+- Preserve a separação entre `app` (PHP-FPM) e `web` (Nginx), sem instalar o Nginx dentro da imagem PHP nem PHP dentro da imagem Nginx;
+- Preserve a execução inicial do `ENTRYPOINT` da aplicação como `root` somente enquanto for necessária para preparar permissões; execute comandos específicos da aplicação como `APP_RUNTIME_USER` por meio da função `run_app_command` quando não exigirem privilégios administrativos;
+- Mantenha certificados fora das camadas das imagens e monte `data/utils/ssl/` somente no serviço `web` em modo leitura;
 - Evite ajustes recursivos em todo o diretório da aplicação durante cada inicialização;
 - Inicie o processo principal de forma que ele receba corretamente os sinais enviados pelo Docker;
 
@@ -209,7 +211,10 @@ make db-dump-dev DATABASE_USER=<USUARIO> DATABASE_NAME=<BANCO>
 - `EXECUTABLE_DB` e `EXECUTABLE_DB_DUMP`: Clientes usados para restaurar e gerar dumps; os padrões são `mysql` e `mysqldump`;
 - `CURRENT_USER`: Usuário proprietário dos arquivos e diretórios; o padrão é o usuário atual, obtido por `id -un`;
 - `DOCKER_GROUP`: Grupo usado pelos alvos de permissionamento do workspace e obtido do arquivo de ambiente;
-- `WEBSERVER_USER` e `WEBSERVER_GROUP`: Usuário e grupo usados nas permissões da imagem, nos diretórios graváveis e nos comandos específicos da aplicação;
+- `APP_RUNTIME_USER` e `APP_RUNTIME_GROUP`: Usuário e grupo usados pelo runtime PHP-FPM, nas permissões da imagem e nos comandos específicos da aplicação;
+- `PHP_FPM_HOST` e `PHP_FPM_PORT`: Endpoint FastCGI interno utilizado pelo Nginx;
+- `WEBSERVER_BASE_IMG`: Imagem base do Nginx;
+- `WEBSERVER_SERVICE`: Identificador do web server utilizado na nomenclatura dos containers;
 - `DATABASE_USER`, `DATABASE_NAME` e `DATABASE_DUMP_SQL`: Parâmetros exigidos pelos alvos de banco de dados aplicáveis;
 
 ### Verificações de pré-requisitos
@@ -228,7 +233,7 @@ make add-user-groups
 make apply-permissions
 ```
 
-Após alterar os grupos do usuário, encerre e inicie novamente a sessão para aplicar a nova associação. Confirme `CURRENT_USER`, `DOCKER_GROUP` e `WEBSERVER_GROUP` antes do permissionamento, pois `apply-permissions` modifica toda a raiz do projeto.
+Após alterar os grupos do usuário, encerre e inicie novamente a sessão para aplicar a nova associação. Confirme `CURRENT_USER`, `DOCKER_GROUP` e `APP_RUNTIME_GROUP` antes do permissionamento, pois `apply-permissions` modifica toda a raiz do projeto.
 
 ### Validações de qualidade
 
@@ -275,7 +280,8 @@ Liste e revise os recursos do hospedeiro antes dos alvos de limpeza, pois eles p
 - Reutilize os alvos existentes sempre que possível;
 - Adicione alvos específicos da aplicação na área reservada imediatamente antes do alvo `help`;
 - Nomeie esses alvos no formato `nomeaplicacao-comando`, por exemplo, `minhaapp-clear-cache`;
-- Reutilize a função `run_app_command` nos alvos que devam executar comandos com `WEBSERVER_USER` dentro do container;
+- Reutilize a função `run_app_command` nos alvos que devam executar comandos com `APP_RUNTIME_USER` dentro do container;
+- Use `SERVICE_WEB` para alvos que precisem acessar explicitamente o container Nginx;
 - Inclua novos alvos em `.PHONY`, quando aplicável, e documente-os na saída de `make help`;
 - Mantenha pares de comandos com e sem o sufixo `-dev` quando a operação existir nos dois ambientes;
 - Preserve a convenção de que os comandos com `-dev` operam em desenvolvimento e os equivalentes sem o sufixo operam em produção;
@@ -306,7 +312,7 @@ Preserve o cabeçalho existente nos arquivos que já o adotam. Adicione o cabeç
 # @license   GPLv3+ <https://www.gnu.org/licenses/gpl-3.0.html>
 # @link      GitHub <https://github.com/mendescrafael>
 #
-# This file is part of {Nome do projeto}.
+# This file is part of Docker Template.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by

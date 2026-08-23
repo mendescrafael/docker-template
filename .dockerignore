@@ -5,7 +5,7 @@
 # @license   GPLv3+ <https://www.gnu.org/licenses/gpl-3.0.html>
 # @link      GitHub <https://github.com/mendescrafael>
 #
-# This file is part of {Nome do projeto}.
+# This file is part of Docker Template.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -31,6 +31,13 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# -----------------------------------------------------------------------------
+# Arquivos auxiliares do Codex e agentes.
+# -----------------------------------------------------------------------------
+.codex/
+.github/
+AGENTS.md
 
 # -----------------------------------------------------------------------------
 # Logs e arquivos temporários.
@@ -72,3 +79,28 @@ Makefile
 scripts/
 tests/
 vendor/
+
+# Arquivos de desenvolvimento e documentação da aplicação.
+app/tests/
+app/*.md
+app/LICENSE
+app/.editorconfig
+app/.gitattributes
+app/.npmrc
+app/phpstan.neon
+app/phpunit.xml
+app/pint.json
+
+# -----------------------------------------------------------------------------
+# Artefatos frontend gerados ou exclusivos do desenvolvimento.
+# -----------------------------------------------------------------------------
+app/node_modules/
+app/public/build/
+app/public/hot
+
+# -----------------------------------------------------------------------------
+# Certificados SSL/TLS locais.
+# -----------------------------------------------------------------------------
+data/utils/ssl/*
+!data/utils/ssl/.gitkeep
+!data/utils/ssl/*.example
